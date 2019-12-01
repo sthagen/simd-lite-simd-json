@@ -565,7 +565,7 @@ mod tests {
         let mut d = String::from("[]");
         let mut d = unsafe { d.as_bytes_mut() };
         let simd = Deserializer::from_slice(&mut d).expect("");
-        assert_eq!(simd.tape[1], Node::Array(0, 2));
+        assert_eq!(simd.tape[1], Node::Array(0, 1));
     }
 
     #[test]
@@ -573,33 +573,36 @@ mod tests {
         let mut d = String::from("[1]");
         let mut d = unsafe { d.as_bytes_mut() };
         let simd = Deserializer::from_slice(&mut d).expect("");
-        assert_eq!(simd.tape[1], Node::Array(1, 3));
+        assert_eq!(simd.tape[1], Node::Array(1, 2));
     }
 
     #[test]
     fn count3() {
-        let mut d = String::from("[1,2]");
+        //                                 0 1   2   3
+        let mut d = String::from(" [ 1 , 2 ] ");
         let mut d = unsafe { d.as_bytes_mut() };
         let simd = Deserializer::from_slice(&mut d).expect("");
-        assert_eq!(simd.tape[1], Node::Array(2, 4));
+        assert_eq!(simd.tape[1], Node::Array(2, 3));
     }
 
     #[test]
     fn count4() {
-        let mut d = String::from(" [ 1 , [ 3 ] , 2 ]");
+        //                                 0 1   2 3     4   5
+        let mut d = String::from(" [ 1 , [ 3 ] , 2 ] ");
         let mut d = unsafe { d.as_bytes_mut() };
         let simd = Deserializer::from_slice(&mut d).expect("");
-        assert_eq!(simd.tape[1], Node::Array(3, 6));
-        assert_eq!(simd.tape[3], Node::Array(1, 5));
+        assert_eq!(simd.tape[1], Node::Array(3, 5));
+        assert_eq!(simd.tape[3], Node::Array(1, 2));
     }
 
     #[test]
     fn count5() {
-        let mut d = String::from("[[],null,null]");
+        //                                 0 1     2      3
+        let mut d = String::from(" [ [ ] , null , null ] ");
         let mut d = unsafe { d.as_bytes_mut() };
         let simd = Deserializer::from_slice(&mut d).expect("");
-        assert_eq!(simd.tape[1], Node::Array(3, 5));
-        assert_eq!(simd.tape[2], Node::Array(0, 3));
+        assert_eq!(simd.tape[1], Node::Array(3, 4));
+        assert_eq!(simd.tape[2], Node::Array(0, 1));
     }
 
     #[test]

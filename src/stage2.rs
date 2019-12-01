@@ -544,8 +544,6 @@ impl<'de> Deserializer<'de> {
                     }
 
                     let (a_state, a_last_start, a_cnt) = unsafe { stack.get_unchecked(depth) };
-                    //                    let (a_state, a_last_start, a_cnt) = unsafe {  };
-                    //s2try!(stack.pop().ok_or_else(|| Error::generic(ErrorType::Syntax)));
 
                     last_start = *a_last_start;
                     cnt = *a_cnt;
