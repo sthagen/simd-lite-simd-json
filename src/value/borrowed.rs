@@ -7,9 +7,10 @@ mod serialize;
 use crate::value::{MutableValue, Value as ValueTrait, ValueBuilder, ValueType};
 use crate::{Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::convert::TryFrom;
 use std::fmt;
+use std::hash::Hash;
 use std::ops::{Index, IndexMut};
 
 /// Representation of a JSON object
@@ -110,7 +111,22 @@ impl<'v> MutableValue for Value<'v> {
 
 impl<'v> ValueTrait for Value<'v> {
     type Key = Cow<'v, str>;
+    type Array = Vec<Self>;
+    type Object = HashMap<Self::Key, Self>;
 
+    #[inline]
+    fn get<Q: ?Sized>(&self, k: &Q) -> Option<&Self>
+    where
+        Self::Key: Borrow<Q> + Hash + Eq,
+        Q: Hash + Eq,
+    {
+        self.as_object().and_then(|a| a.get(k))
+    }
+
+    #[inline]
+    fn get_idx(&self, i: usize) -> Option<&Self> {
+        self.as_array().and_then(|a| a.get(i))
+    }
     #[inline]
     fn value_type(&self) -> ValueType {
         match self {
@@ -177,7 +193,6 @@ impl<'v> ValueTrait for Value<'v> {
 
     #[inline]
     fn as_str(&self) -> Option<&str> {
-        use std::borrow::Borrow;
         match self {
             Self::String(s) => Some(s.borrow()),
             _ => None,

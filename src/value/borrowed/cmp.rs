@@ -2,7 +2,7 @@ use super::Value;
 use crate::{OwnedValue, Value as ValueTrait};
 
 #[allow(clippy::cast_sign_loss, clippy::default_trait_access)]
-impl<'a> PartialEq for Value<'a> {
+impl<'v> PartialEq for Value<'v> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {

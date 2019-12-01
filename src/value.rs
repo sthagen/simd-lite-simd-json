@@ -247,8 +247,12 @@ pub trait Value:
     + PartialEq<bool>
     + PartialEq<()>
 {
-    /// The type for Objects
+    /// The type for Object Keys
     type Key;
+    /// The type for Arrays
+    type Array;
+    /// The type for Objects
+    type Object;
 
     /// Gets a ref to a value based on a key, returns `None` if the
     /// current Value isn't an Object or doesn't contain the key
@@ -257,18 +261,13 @@ pub trait Value:
     fn get<Q: ?Sized>(&self, k: &Q) -> Option<&Self>
     where
         Self::Key: Borrow<Q> + Hash + Eq,
-        Q: Hash + Eq,
-    {
-        self.as_object().and_then(|a| a.get(k))
-    }
+        Q: Hash + Eq;
 
     /// Gets a ref to a value based on n index, returns `None` if the
     /// current Value isn't an Array or doesn't contain the index
     /// it was asked for.
     #[inline]
-    fn get_idx(&self, i: usize) -> Option<&Self> {
-        self.as_array().and_then(|a| a.get(i))
-    }
+    fn get_idx(&self, i: usize) -> Option<&Self>;
 
     /// Returns the type of the current Valye
     fn value_type(&self) -> ValueType;
@@ -442,7 +441,7 @@ pub trait Value:
     }
 
     /// Tries to represent the value as an array and returns a refference to it
-    fn as_array(&self) -> Option<&Vec<Self>>;
+    fn as_array(&self) -> Option<&Self::Array>;
 
     /// returns true if the current value can be represented as an array
     #[inline]
@@ -451,7 +450,7 @@ pub trait Value:
     }
 
     /// Tries to represent the value as an object and returns a refference to it
-    fn as_object(&self) -> Option<&HashMap<Self::Key, Self>>;
+    fn as_object(&self) -> Option<&Self::Object>;
 
     /// returns true if the current value can be represented as an object
     #[inline]
