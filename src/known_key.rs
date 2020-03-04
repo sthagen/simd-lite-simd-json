@@ -46,6 +46,12 @@ where
 }
 
 impl<'key> KnownKey<'key> {
+    /// The known key
+    #[inline]
+    pub fn key(&self) -> &Cow<'key, str> {
+        &self.key
+    }
+
     /// Looks up this key in a `Value`, returns None if the
     /// key wasn't present or `target` isn't an object
     ///
@@ -321,5 +327,15 @@ mod tests {
         assert_eq!(key2.insert(&mut v, 3.into()).unwrap(), None);
         assert_eq!(v["key"], 2);
         assert_eq!(v["cake"], 3);
+    }
+
+    #[test]
+    fn known_key_get_key() {
+        use std::borrow::Cow;
+        let mut o = Object::with_capacity(128);
+        o.insert("snot".into(), 1.into());
+        let key1 = KnownKey::from(Cow::Borrowed("snot"));
+
+        assert_eq!(key1.key(), "snot");
     }
 }
