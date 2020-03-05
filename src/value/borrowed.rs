@@ -24,7 +24,7 @@ mod cmp;
 mod from;
 mod serialize;
 
-use crate::value::{MutableValue, Value as ValueTrait, ValueBuilder, ValueType};
+use crate::prelude::*;
 use crate::{Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
 use std::borrow::Cow;
@@ -106,7 +106,7 @@ impl<'v> Value<'v> {
     }
 }
 
-impl<'v> ValueBuilder for Value<'v> {
+impl<'v> Builder<'v> for Value<'v> {
     #[inline]
     #[must_use]
     fn null() -> Self {
@@ -124,8 +124,7 @@ impl<'v> ValueBuilder for Value<'v> {
     }
 }
 
-impl<'v> MutableValue for Value<'v> {
-    type Key = Cow<'v, str>;
+impl<'v> Mutable for Value<'v> {
     #[inline]
     #[must_use]
     fn as_array_mut(&mut self) -> Option<&mut Vec<Value<'v>>> {
@@ -136,7 +135,7 @@ impl<'v> MutableValue for Value<'v> {
     }
     #[inline]
     #[must_use]
-    fn as_object_mut(&mut self) -> Option<&mut HashMap<<Self as MutableValue>::Key, Self>> {
+    fn as_object_mut(&mut self) -> Option<&mut HashMap<<Self as ValueTrait>::Key, Self>> {
         match self {
             Self::Object(m) => Some(m),
             _ => None,
@@ -146,6 +145,8 @@ impl<'v> MutableValue for Value<'v> {
 
 impl<'v> ValueTrait for Value<'v> {
     type Key = Cow<'v, str>;
+    type Array = Vec<Self>;
+    type Object = HashMap<Self::Key, Self>;
 
     #[inline]
     #[must_use]
@@ -370,7 +371,6 @@ impl<'de> BorrowDeserializer<'de> {
 mod test {
     #![allow(clippy::cognitive_complexity)]
     use super::*;
-    use crate::value::{AccessError, Value as ValueTrait};
 
     #[test]
     fn object_access() {

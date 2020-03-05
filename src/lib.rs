@@ -17,17 +17,14 @@
 #![cfg_attr(feature = "hints", feature(core_intrinsics))]
 #![forbid(warnings)]
 #![warn(unused_extern_crates)]
-#![cfg_attr(
-    feature = "cargo-clippy",
-    deny(
-        clippy::all,
-        clippy::result_unwrap_used,
-        clippy::unnecessary_unwrap,
-        clippy::pedantic
-    ),
-    // We might want to revisit inline_always
-    allow(clippy::module_name_repetitions, clippy::inline_always)
+#![deny(
+    clippy::all,
+    clippy::result_unwrap_used,
+    clippy::unnecessary_unwrap,
+    clippy::pedantic
 )]
+// We might want to revisit inline_always
+#![allow(clippy::module_name_repetitions, clippy::inline_always)]
 #![deny(missing_docs)]
 
 //! simdjson-rs is a rust port of the simdjson c++ library. It follows
@@ -217,9 +214,11 @@ pub mod value;
 
 use std::mem;
 use std::str;
+pub use value_trait::StaticNode;
 
 pub use crate::error::{Error, ErrorType};
 pub use crate::value::*;
+pub use value_trait::ValueType;
 
 /// simd-json Result type
 pub type Result<T> = std::result::Result<T, Error>;
@@ -229,7 +228,7 @@ mod known_key;
 #[cfg(feature = "known-key")]
 pub use known_key::{Error as KnownKeyError, KnownKey};
 
-pub use crate::tape::{Node, StaticNode, Tape};
+pub use crate::tape::{Node, Tape};
 
 /// Creates a tape from the input for later consumption
 /// # Errors
@@ -644,6 +643,7 @@ mod tests {
     use super::{owned::Value, to_borrowed_value, to_owned_value, Deserializer};
     use crate::tape::*;
     use proptest::prelude::*;
+    use value_trait::{StaticNode, Writable};
 
     #[test]
     fn count1() {
@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn odd_nuber() {
         use super::value::owned::to_value;
-        use super::value::{MutableValue, ValueBuilder};
+        use super::value::{Builder, Mutable};
 
         let mut d = String::from(
             r#"{"name": "max_unsafe_auto_id_timestamp", "value": -9223372036854776000}"#,
@@ -710,7 +710,7 @@ mod tests {
     #[test]
     fn odd_nuber2() {
         use super::value::owned::to_value;
-        use super::value::{MutableValue, ValueBuilder};
+        use super::value::{Builder, Mutable};
 
         let mut d = String::from(
             r#"{"name": "max_unsafe_auto_id_timestamp", "value": 9223372036854776000}"#,
@@ -839,13 +839,12 @@ mod tests {
 mod tests_serde {
     #![allow(clippy::unnecessary_operation, clippy::non_ascii_literal)]
     use super::serde::from_slice;
-    use super::value::{MutableValue, ValueBuilder};
     use super::{owned::to_value, owned::Object, owned::Value, to_borrowed_value, to_owned_value};
-    use crate::tape::*;
     use halfbrown::HashMap;
     use proptest::prelude::*;
     use serde::Deserialize;
     use serde_json;
+    use value_trait::{Builder, Mutable, StaticNode};
 
     #[test]
     fn empty() {
