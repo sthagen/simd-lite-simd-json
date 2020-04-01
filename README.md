@@ -1,14 +1,14 @@
 # SIMD Json for Rust &emsp; [![Build Status]][simd-json.rs] [![Build Status ARM]][drone.io] [![Quality]][simd-json.rs]  [![Latest Version]][crates.io] [![Code Coverage]][codecov.io]
 
-[Build Status ARM]: https://cloud.drone.io/api/badges/simd-lite/simdjson-rs/status.svg
-[drone.io]: https://cloud.drone.io/simd-lite/simdjson-rs
-[Build Status]: https://github.com/simd-lite/simdjson-rs/workflows/Tests/badge.svg
-[Quality]: https://github.com/simd-lite/simdjson-rs/workflows/Quality/badge.svg
+[Build Status ARM]: https://cloud.drone.io/api/badges/simd-lite/simd-json/status.svg
+[drone.io]: https://cloud.drone.io/simd-lite/simd-json
+[Build Status]: https://github.com/simd-lite/simd-json/workflows/Tests/badge.svg
+[Quality]: https://github.com/simd-lite/simd-json/workflows/Quality/badge.svg
 [simd-json.rs]: https://simd-json.rs
 [Latest Version]: https://img.shields.io/crates/v/simd-json.svg
 [crates.io]: https://crates.io/crates/simd-json
-[Code Coverage]: https://codecov.io/gh/simd-lite/simdjson-rs/badge.svg
-[codecov.io]: https://codecov.io/gh/simd-lite/simdjson-rs
+[Code Coverage]: https://codecov.io/gh/simd-lite/simd-json/badge.svg
+[codecov.io]: https://codecov.io/gh/simd-lite/simd-json
 
 **Rust port of extremely fast [simdjson](https://github.com/lemire/simdjson) JSON parser with [serde][1] compatibility.**
 
@@ -58,7 +58,7 @@ For struct values we defer to external serde-compatible serialization mechanisms
 
 There are a few reasons for this:
 
-* SIMD intrinsics are inherently unsafe. These uses of unsafe are inescapable in a library such as `simd-jons`.
+* SIMD intrinsics are inherently unsafe. These uses of unsafe are inescapable in a library such as `simd-json`.
 * We work around some performance bottlenecks imposed by safe rust. These are avoidable, but at a cost to performance. This is a more considered path in `simd-json`.
 
 
@@ -79,7 +79,7 @@ There are also bindings for upstream `simdjson` available [here](https://github.
 
 ## License
 
-simdjson-rs itself is licensed under either of
+simd-json itself is licensed under either of
 
 * Apache License, Version 2.0, (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
 * MIT license (LICENSE-MIT or http://opensource.org/licenses/MIT)

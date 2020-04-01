@@ -1,4 +1,4 @@
-/// simdjson-rs integrates with serde, this module holds this integration.
+/// simd-json integrates with serde, this module holds this integration.
 /// note that when parsing to a dom you should use the functions in
 /// `to_owned_value` or `to_borrowed_value` as they provide much
 /// better performance.
@@ -39,7 +39,7 @@ impl std::fmt::Display for SerdeConversionError {
             NumberOutOfBounds => write!(f, "Serde can not represent 128 bit values"),
             Oops => write!(
                 f,
-                "Unreachable code is reachable, oops - please open a bug with simdjson-rs"
+                "Unreachable code is reachable, oops - please open a bug with simd-json"
             ),
         }
     }
@@ -465,5 +465,30 @@ mod test {
         assert_eq!(s, s_c);
         let v_c: BorrowedValue = s.try_into().unwrap();
         assert_eq!(v, v_c);
+    }
+
+    #[test]
+    fn option_field_absent() {
+        #[derive(serde::Deserialize, Debug)]
+        pub struct Person {
+            pub name: String,
+            pub middle_name: Option<String>,
+            pub friends: Vec<String>,
+        }
+        let mut raw_json = r#"{"name":"bob","friends":[]}"#.to_string();
+        let result: Result<Person, _> = super::from_slice(unsafe { raw_json.as_bytes_mut() });
+        assert!(result.is_ok());
+    }
+    #[test]
+    fn option_field_present() {
+        #[derive(serde::Deserialize, Debug)]
+        pub struct Person {
+            pub name: String,
+            pub middle_name: Option<String>,
+            pub friends: Vec<String>,
+        }
+        let mut raw_json = r#"{"name":"bob","middle_name": "frank", "friends":[]}"#.to_string();
+        let result: Result<Person, _> = super::from_slice(unsafe { raw_json.as_bytes_mut() });
+        assert!(result.is_ok());
     }
 }
