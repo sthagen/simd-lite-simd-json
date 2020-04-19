@@ -1,9 +1,9 @@
 [package]
 name = "simd-json"
-version = "0.3.4"
+version = "0.3.8"
 authors = ["Heinz N. Gies <heinz@licenser.net>", "Sunny Gleason"]
 edition = "2018"
-exclude = [ "data/*" ]
+exclude = [ "data/*", "fuzz/*"]
 license = "Apache-2.0/MIT"
 description = "High performance JSON parser based on a port of simdjson"
 repository = "https://github.com/simd-lite/simd-json"
@@ -15,10 +15,8 @@ documentation = "https://docs.rs/simd-json"
 
 [dependencies]
 halfbrown = "0.1"
-itoa = "0.4"
-ryu = "1"
 
-value-trait = "0.1"
+value-trait = "0.1.7"
 
 # serde compatibilty
 serde = { version = "1", features = ["derive"], optional = true}
@@ -82,7 +80,8 @@ hints = [] # requires nightly
 # for perf testing, used by the example
 perf = ["perfcnt", "getopts", "colored"]
 
-
-
 [[example]]
 name = "perf"
+
+# [patch.crates-io]
+# value-trait = { path = '../value-trait' }

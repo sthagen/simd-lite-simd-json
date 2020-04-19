@@ -140,7 +140,10 @@ extern crate serde as serde_ext;
 pub mod serde;
 
 #[cfg(feature = "serde_impl")]
-pub use crate::serde::{from_reader, from_slice, from_str};
+pub use crate::serde::{
+    from_reader, from_slice, from_str, to_string, to_string_pretty, to_vec, to_vec_pretty,
+    to_writer, to_writer_pretty,
+};
 
 /// Default trait imports;
 pub mod prelude;
@@ -241,8 +244,7 @@ pub use crate::tape::{Node, Tape};
 ///
 /// Will return `Err` if `s` is invalid JSON.
 pub fn to_tape<'input>(s: &'input mut [u8]) -> Result<Vec<Node<'input>>> {
-    let de = stry!(Deserializer::from_slice(s));
-    Ok(de.tape)
+    Deserializer::from_slice(s).map(|de| de.tape)
 }
 
 pub(crate) struct Utf8CheckingState<T> {
