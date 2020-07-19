@@ -90,3 +90,4 @@ However it ports a lot of code from [simdjson](https://github.com/lemire/simdjso
 The [serde][1] integration is based on their example and `serde-json` so again, their copyright should as well be respected.
 
 [1]: https://serde.rs
+
