@@ -22,11 +22,7 @@ where
     #[inline]
     #[must_use]
     fn from(s: Option<T>) -> Self {
-        if let Some(v) = s {
-            Value::from(v)
-        } else {
-            Value::Static(StaticNode::Null)
-        }
+        s.map_or(Value::Static(StaticNode::Null), Value::from)
     }
 }
 
@@ -47,19 +43,19 @@ impl From<&str> for Value {
     }
 }
 
-impl<'v> From<std::borrow::Cow<'v, str>> for Value {
+impl<'value> From<std::borrow::Cow<'value, str>> for Value {
     #[inline]
     #[must_use]
-    fn from(c: std::borrow::Cow<'v, str>) -> Self {
+    fn from(c: std::borrow::Cow<'value, str>) -> Self {
         Self::String(c.to_string())
     }
 }
 
 #[cfg(feature = "beef")]
-impl<'v> From<beef::lean::Cow<'v, str>> for Value {
+impl<'value> From<beef::lean::Cow<'value, str>> for Value {
     #[inline]
     #[must_use]
-    fn from(c: beef::lean::Cow<'v, str>) -> Self {
+    fn from(c: beef::lean::Cow<'value, str>) -> Self {
         Self::String(c.to_string())
     }
 }

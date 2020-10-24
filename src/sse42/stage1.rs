@@ -2,8 +2,8 @@
 use crate::utf8check::Utf8Check;
 
 use crate::{
-    static_cast_i32, static_cast_i64, static_cast_i8, static_cast_u32, ProcessedUtfBytes,
-    Stage1Parse, Utf8CheckingState,
+    static_cast_i32, static_cast_i64, static_cast_u32, ProcessedUtfBytes, Stage1Parse,
+    Utf8CheckingState,
 };
 #[cfg(target_arch = "x86")]
 use std::arch::x86::{
@@ -14,10 +14,9 @@ use std::arch::x86::{
 };
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::{
-    __m128i, _mm_add_epi32, _mm_and_si128, _mm_clmulepi64_si128, _mm_cmpeq_epi8, _mm_cmpgt_epi8,
-    _mm_cvtsi128_si64, _mm_loadu_si128, _mm_max_epu8, _mm_movemask_epi8, _mm_or_si128,
-    _mm_set1_epi8, _mm_set_epi32, _mm_set_epi64x, _mm_setr_epi8, _mm_setzero_si128,
-    _mm_shuffle_epi8, _mm_srli_epi32, _mm_storeu_si128, _mm_testz_si128,
+    __m128i, _mm_add_epi32, _mm_and_si128, _mm_clmulepi64_si128, _mm_cmpeq_epi8, _mm_cvtsi128_si64,
+    _mm_loadu_si128, _mm_max_epu8, _mm_movemask_epi8, _mm_set1_epi8, _mm_set_epi32, _mm_set_epi64x,
+    _mm_setr_epi8, _mm_setzero_si128, _mm_shuffle_epi8, _mm_srli_epi32, _mm_storeu_si128,
 };
 
 use std::mem;
@@ -63,10 +62,7 @@ impl SimdInput {
 impl Stage1Parse<__m128i> for SimdInput {
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     fn new_utf8_checking_state() -> Utf8CheckingState<__m128i> {
-        Utf8CheckingState {
-            has_error: Self::zero(),
-            previous: ProcessedUtfBytes::default(),
-        }
+        ProcessedUtfBytes::<__m128i>::default()
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
@@ -84,52 +80,10 @@ impl Stage1Parse<__m128i> for SimdInput {
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     fn check_utf8(&self, state: &mut Utf8CheckingState<__m128i>) {
         unsafe {
-            let highbit: __m128i = _mm_set1_epi8(static_cast_i8!(0x80_u8));
-            if (_mm_testz_si128(_mm_or_si128(self.v0, self.v1), highbit)) == 1 {
-                // it is ascii, we just check continuation
-                state.has_error = _mm_or_si128(
-                    _mm_cmpgt_epi8(
-                        state.previous.carried_continuations,
-                        _mm_setr_epi8(9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 1),
-                    ),
-                    state.has_error,
-                );
-            } else {
-                // it is not ascii so we have to do heavy work
-                state.previous = ProcessedUtfBytes::check_utf8_bytes(
-                    self.v0,
-                    &state.previous,
-                    &mut state.has_error,
-                );
-                state.previous = ProcessedUtfBytes::check_utf8_bytes(
-                    self.v1,
-                    &state.previous,
-                    &mut state.has_error,
-                );
-            }
-
-            if (_mm_testz_si128(_mm_or_si128(self.v2, self.v3), highbit)) == 1 {
-                // it is ascii, we just check continuation
-                state.has_error = _mm_or_si128(
-                    _mm_cmpgt_epi8(
-                        state.previous.carried_continuations,
-                        _mm_setr_epi8(9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 1),
-                    ),
-                    state.has_error,
-                );
-            } else {
-                // it is not ascii so we have to do heavy work
-                state.previous = ProcessedUtfBytes::check_utf8_bytes(
-                    self.v2,
-                    &state.previous,
-                    &mut state.has_error,
-                );
-                state.previous = ProcessedUtfBytes::check_utf8_bytes(
-                    self.v3,
-                    &state.previous,
-                    &mut state.has_error,
-                );
-            }
+            ProcessedUtfBytes::<__m128i>::check_bytes(self.v0, state);
+            ProcessedUtfBytes::<__m128i>::check_bytes(self.v1, state);
+            ProcessedUtfBytes::<__m128i>::check_bytes(self.v2, state);
+            ProcessedUtfBytes::<__m128i>::check_bytes(self.v3, state);
         }
     }
 
@@ -327,7 +281,7 @@ impl Stage1Parse<__m128i> for SimdInput {
 
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     fn check_utf8_errors(state: &Utf8CheckingState<__m128i>) -> bool {
-        unsafe { _mm_testz_si128(state.has_error, state.has_error) == 0 }
+        unsafe { ProcessedUtfBytes::<__m128i>::has_error(state.error) }
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline(always))]

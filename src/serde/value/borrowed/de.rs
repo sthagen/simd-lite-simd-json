@@ -1,7 +1,7 @@
-use crate::cow::Cow;
 use crate::value::borrowed::{Object, Value};
 use crate::Error;
 use crate::StaticNode;
+use crate::{cow::Cow, ErrorType};
 use serde_ext::de::{
     self, Deserialize, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor,
 };
@@ -62,41 +62,60 @@ impl<'de> de::Deserializer<'de> for Value<'de> {
         }
     }
 
+    #[cfg_attr(not(feature = "no-inline"), inline)]
+    fn deserialize_struct<V>(
+        self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self {
+            // Give the visitor access to each element of the sequence.
+            Value::Array(a) => visitor.visit_seq(Array(a.iter())),
+            Value::Object(o) => visitor.visit_map(ObjectAccess {
+                i: o.iter(),
+                v: &Value::Static(StaticNode::Null),
+            }),
+            _ => Err(crate::Deserializer::error(ErrorType::ExpectedMap)),
+        }
+    }
+
     forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
             bytes byte_buf unit unit_struct newtype_struct seq tuple
-            tuple_struct map struct enum identifier ignored_any
+            tuple_struct map enum identifier ignored_any
     }
 }
 
-struct Array<'de, 'a: 'de>(std::slice::Iter<'de, Value<'a>>);
+struct Array<'de, 'value: 'de>(std::slice::Iter<'de, Value<'value>>);
 
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de, 'a> SeqAccess<'de> for Array<'a, 'de> {
+impl<'de, 'value> SeqAccess<'de> for Array<'value, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: DeserializeSeed<'de>,
     {
-        if let Some(v) = self.0.next() {
-            //TODO: This is ugly
-            seed.deserialize(v.clone()).map(Some)
-        } else {
-            Ok(None)
-        }
+        //TODO: This is ugly
+        self.0
+            .next()
+            .map_or(Ok(None), |v| seed.deserialize(v.clone()).map(Some))
     }
 }
 
-struct ObjectAccess<'de, 'a: 'de> {
-    i: halfbrown::Iter<'de, Cow<'a, str>, Value<'a>>,
-    v: &'de Value<'a>,
+struct ObjectAccess<'de, 'value: 'de> {
+    i: halfbrown::Iter<'de, Cow<'value, str>, Value<'value>>,
+    v: &'de Value<'value>,
 }
 
 // `MapAccess` is provided to the `Visitor` to give it the ability to iterate
 // through entries of the map.
-impl<'de, 'a> MapAccess<'de> for ObjectAccess<'a, 'de> {
+impl<'de, 'value> MapAccess<'de> for ObjectAccess<'value, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
@@ -387,12 +406,20 @@ mod test {
     #[test]
     fn option_field_present_owned() {
         #[derive(serde::Deserialize, Debug)]
+        pub struct Point {
+            pub x: u64,
+            pub y: u64,
+        }
+        #[derive(serde::Deserialize, Debug)]
         pub struct Person {
             pub name: String,
             pub middle_name: Option<String>,
             pub friends: Vec<String>,
+            pub pos: Point,
         }
-        let mut raw_json = r#"{"name":"bob","middle_name": "frank", "friends":[]}"#.to_string();
+
+        let mut raw_json =
+            r#"{"name":"bob","middle_name": "frank", "friends":[], "pos":[0,1]}"#.to_string();
         let result: Result<Person, _> =
             crate::to_borrowed_value(unsafe { raw_json.as_bytes_mut() })
                 .and_then(super::super::from_value);

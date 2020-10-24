@@ -1,6 +1,6 @@
 [package]
 name = "simd-json"
-version = "0.3.19-alpha.0"
+version = "0.3.22-alpha.0"
 authors = ["Heinz N. Gies <heinz@licenser.net>", "Sunny Gleason"]
 edition = "2018"
 exclude = [ "data/*", "fuzz/*"]
@@ -35,6 +35,9 @@ criterion = { version = "0.3", optional = true }
 float-cmp = "0.8"
 getopts = "0.2"
 proptest = "0.10"
+
+[lib]
+bench = false
 
 [[bench]]
 name = "parse"

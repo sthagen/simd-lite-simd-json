@@ -333,17 +333,12 @@ impl<'value> TryFrom<serde_json::Value> for BorrowedValue<'value> {
         match item {
             Value::Null => Ok(BorrowedValue::from(())),
             Value::Bool(b) => Ok(BorrowedValue::from(b)),
-            Value::Number(b) => {
-                if let Some(n) = b.as_i64() {
-                    Ok(Self::from(n))
-                } else if let Some(n) = b.as_u64() {
-                    Ok(Self::from(n))
-                } else if let Some(n) = b.as_f64() {
-                    Ok(Self::from(n))
-                } else {
-                    Err(SerdeConversionError::Oops)
-                }
-            }
+            Value::Number(b) => match (b.as_i64(), b.as_u64(), b.as_f64()) {
+                (Some(n), _, _) => Ok(Self::from(n)),
+                (_, Some(n), _) => Ok(Self::from(n)),
+                (_, _, Some(n)) => Ok(Self::from(n)),
+                _ => Err(SerdeConversionError::Oops),
+            },
             Value::String(b) => Ok(Self::String(b.into())),
             Value::Array(a) => a.into_iter().map(Self::try_from).collect(),
             Value::Object(o) => o
@@ -560,6 +555,25 @@ mod test {
     fn simple_simd_json() {
         let mut json = br#""A""#.to_vec();
 
-        crate::from_slice::<Bar>(&mut json).unwrap();
+        assert!(crate::from_slice::<Bar>(&mut json).is_ok());
+    }
+
+    #[test]
+    fn array_as_struct() {
+        #[derive(serde_ext::Deserialize)]
+        struct Point {
+            x: u64,
+            y: u64,
+        }
+
+        let mut json = br#"[1,2]"#.to_vec();
+
+        let p: Point = serde_json::from_slice(&json).unwrap();
+        assert_eq!(p.x, 1);
+        assert_eq!(p.y, 2);
+
+        let p: Point = crate::from_slice(&mut json).unwrap();
+        assert_eq!(p.x, 1);
+        assert_eq!(p.y, 2);
     }
 }

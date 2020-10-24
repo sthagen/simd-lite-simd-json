@@ -24,7 +24,7 @@ mod from;
 mod serialize;
 
 use crate::prelude::*;
-use crate::{Deserializer, Node, Result, StaticNode};
+use crate::{AlignedBuf, Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
 use std::fmt;
 use std::ops::{Index, IndexMut};
@@ -48,6 +48,26 @@ pub fn to_value(s: &mut [u8]) -> Result<Value> {
     }
 }
 
+/// Parses a slice of bytes into a Value dom. This function will
+/// rewrite the slice to de-escape strings.
+/// We do not keep any references to the raw data but re-allocate
+/// owned memory whereever required thus returning a value without
+/// a lifetime.
+///
+/// # Errors
+///
+/// Will return `Err` if `s` is invalid JSON.
+pub fn to_value_with_buffers(
+    s: &mut [u8],
+    input_buffer: &mut AlignedBuf,
+    string_buffer: &mut [u8],
+) -> Result<Value> {
+    match Deserializer::from_slice_with_buffers(s, input_buffer, string_buffer) {
+        Ok(de) => Ok(OwnedDeserializer::from_deserializer(de).parse()),
+        Err(e) => Err(e),
+    }
+}
+
 /// Owned JSON-DOM Value, consider using the `ValueTrait`
 /// to access it's content.
 /// This is slower then the `BorrowedValue` as a tradeoff
@@ -64,7 +84,7 @@ pub enum Value {
     Object(Box<Object>),
 }
 
-impl<'b> Builder<'b> for Value {
+impl<'input> Builder<'input> for Value {
     #[inline]
     #[must_use]
     fn null() -> Self {
@@ -120,10 +140,7 @@ impl ValueTrait for Value {
     #[inline]
     #[must_use]
     fn is_null(&self) -> bool {
-        match self {
-            Self::Static(StaticNode::Null) => true,
-            _ => false,
-        }
+        matches!(self, Self::Static(StaticNode::Null))
     }
 
     #[inline]
@@ -892,6 +909,25 @@ mod test {
         assert_eq!(v, true);
         let v: Value = false.into();
         assert_eq!(v, false);
+    }
+    #[test]
+    fn test_slice_cmp() {
+        use std::iter::FromIterator;
+        let v: Value = Value::from_iter(vec!["a", "b"]);
+        assert_eq!(v, &["a", "b"][..]);
+    }
+    #[test]
+    #[test]
+    fn test_hashmap_cmp() {
+        use std::iter::FromIterator;
+        let v: Value = Value::from_iter(vec![("a", 1)]);
+        assert_eq!(
+            v,
+            vec![("a", 1)]
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashMap<&str, i32>>()
+        );
     }
     #[test]
     fn test_option_from() {
