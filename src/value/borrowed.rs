@@ -26,15 +26,15 @@ mod serialize;
 
 use crate::cow::Cow;
 use crate::prelude::*;
-use crate::{Deserializer, Node, Result, StaticNode};
+use crate::{AlignedBuf, Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
 use std::fmt;
 use std::ops::{Index, IndexMut};
 
 /// Representation of a JSON object
-pub type Object<'v> = HashMap<Cow<'v, str>, Value<'v>>;
+pub type Object<'value> = HashMap<Cow<'value, str>, Value<'value>>;
 
-/// Parses a slice of butes into a Value dom. This function will
+/// Parses a slice of bytes into a Value dom. This function will
 /// rewrite the slice to de-escape strings.
 /// As we reference parts of the input slice the resulting dom
 /// has the same lifetime as the slice it was created from.
@@ -42,8 +42,27 @@ pub type Object<'v> = HashMap<Cow<'v, str>, Value<'v>>;
 /// # Errors
 ///
 /// Will return `Err` if `s` is invalid JSON.
-pub fn to_value<'v>(s: &'v mut [u8]) -> Result<Value<'v>> {
+pub fn to_value<'value>(s: &'value mut [u8]) -> Result<Value<'value>> {
     match Deserializer::from_slice(s) {
+        Ok(de) => Ok(BorrowDeserializer::from_deserializer(de).parse()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Parses a slice of bytes into a Value dom. This function will
+/// rewrite the slice to de-escape strings.
+/// As we reference parts of the input slice the resulting dom
+/// has the same lifetime as the slice it was created from.
+///
+/// # Errors
+///
+/// Will return `Err` if `s` is invalid JSON.
+pub fn to_value_with_buffers<'value>(
+    s: &'value mut [u8],
+    input_buffer: &mut AlignedBuf,
+    string_buffer: &mut [u8],
+) -> Result<Value<'value>> {
+    match Deserializer::from_slice_with_buffers(s, input_buffer, string_buffer) {
         Ok(de) => Ok(BorrowDeserializer::from_deserializer(de).parse()),
         Err(e) => Err(e),
     }
@@ -52,18 +71,18 @@ pub fn to_value<'v>(s: &'v mut [u8]) -> Result<Value<'v>> {
 /// Borrowed JSON-DOM Value, consider using the `ValueTrait`
 /// to access its content
 #[derive(Debug, Clone)]
-pub enum Value<'v> {
+pub enum Value<'value> {
     /// Static values
     Static(StaticNode),
     /// string type
-    String(Cow<'v, str>),
+    String(Cow<'value, str>),
     /// array type
-    Array(Vec<Value<'v>>),
+    Array(Vec<Value<'value>>),
     /// object type
-    Object(Box<Object<'v>>),
+    Object(Box<Object<'value>>),
 }
 
-impl<'v> Value<'v> {
+impl<'value> Value<'value> {
     /// Enforces static lifetime on a borrowed value, this will
     /// force all strings to become owned COW's, the same applies for
     /// Object keys.
@@ -106,7 +125,7 @@ impl<'v> Value<'v> {
     }
 }
 
-impl<'v> Builder<'v> for Value<'v> {
+impl<'value> Builder<'value> for Value<'value> {
     #[inline]
     #[must_use]
     fn null() -> Self {
@@ -124,10 +143,10 @@ impl<'v> Builder<'v> for Value<'v> {
     }
 }
 
-impl<'v> Mutable for Value<'v> {
+impl<'value> Mutable for Value<'value> {
     #[inline]
     #[must_use]
-    fn as_array_mut(&mut self) -> Option<&mut Vec<Value<'v>>> {
+    fn as_array_mut(&mut self) -> Option<&mut Vec<Value<'value>>> {
         match self {
             Self::Array(a) => Some(a),
             _ => None,
@@ -143,8 +162,8 @@ impl<'v> Mutable for Value<'v> {
     }
 }
 
-impl<'v> ValueTrait for Value<'v> {
-    type Key = Cow<'v, str>;
+impl<'value> ValueTrait for Value<'value> {
+    type Key = Cow<'value, str>;
     type Array = Vec<Self>;
     type Object = HashMap<Self::Key, Self>;
 
@@ -162,10 +181,7 @@ impl<'v> ValueTrait for Value<'v> {
     #[inline]
     #[must_use]
     fn is_null(&self) -> bool {
-        match self {
-            Self::Static(StaticNode::Null) => true,
-            _ => false,
-        }
+        matches!(self, Self::Static(StaticNode::Null))
     }
 
     #[inline]
@@ -247,7 +263,7 @@ impl<'v> ValueTrait for Value<'v> {
 
     #[inline]
     #[must_use]
-    fn as_array(&self) -> Option<&Vec<Value<'v>>> {
+    fn as_array(&self) -> Option<&Vec<Value<'value>>> {
         match self {
             Self::Array(a) => Some(a),
             _ => None,
@@ -264,8 +280,8 @@ impl<'v> ValueTrait for Value<'v> {
     }
 }
 
-#[cfg_attr(tarpaulin, skip)]
-impl<'v> fmt::Display for Value<'v> {
+#[cfg(not(tarpaulin_include))]
+impl<'value> fmt::Display for Value<'value> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Static(s) => write!(f, "{}", s),
@@ -276,41 +292,41 @@ impl<'v> fmt::Display for Value<'v> {
     }
 }
 
-impl<'v> Index<&str> for Value<'v> {
-    type Output = Value<'v>;
+impl<'value> Index<&str> for Value<'value> {
+    type Output = Value<'value>;
     #[inline]
     #[must_use]
     fn index(&self, index: &str) -> &Self::Output {
-        self.get(index).unwrap()
+        self.get(index).expect("index out of bounds")
     }
 }
 
-impl<'v> Index<usize> for Value<'v> {
-    type Output = Value<'v>;
+impl<'value> Index<usize> for Value<'value> {
+    type Output = Value<'value>;
     #[inline]
     #[must_use]
     fn index(&self, index: usize) -> &Self::Output {
-        self.get_idx(index).unwrap()
+        self.get_idx(index).expect("index out of bounds")
     }
 }
 
-impl<'v> IndexMut<&str> for Value<'v> {
+impl<'value> IndexMut<&str> for Value<'value> {
     #[inline]
     #[must_use]
     fn index_mut(&mut self, index: &str) -> &mut Self::Output {
-        self.get_mut(index).unwrap()
+        self.get_mut(index).expect("index out of bounds")
     }
 }
 
-impl<'v> IndexMut<usize> for Value<'v> {
+impl<'value> IndexMut<usize> for Value<'value> {
     #[inline]
     #[must_use]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.get_idx_mut(index).unwrap()
+        self.get_idx_mut(index).expect("index out of bounds")
     }
 }
 
-impl<'v> Default for Value<'v> {
+impl<'value> Default for Value<'value> {
     #[inline]
     #[must_use]
     fn default() -> Self {
@@ -804,6 +820,7 @@ mod test {
     }
 
     use proptest::prelude::*;
+
     fn arb_value() -> BoxedStrategy<Value<'static>> {
         let leaf = prop_oneof![
             Just(Value::Static(StaticNode::Null)),
@@ -947,6 +964,24 @@ mod test {
         assert_eq!(v, true);
         let v: Value = false.into();
         assert_eq!(v, false);
+    }
+    #[test]
+    fn test_slice_cmp() {
+        use std::iter::FromIterator;
+        let v: Value = Value::from_iter(vec!["a", "b"]);
+        assert_eq!(v, &["a", "b"][..]);
+    }
+    #[test]
+    fn test_hashmap_cmp() {
+        use std::iter::FromIterator;
+        let v: Value = Value::from_iter(vec![("a", 1)]);
+        assert_eq!(
+            v,
+            vec![("a", 1)]
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashMap<&str, i32>>()
+        );
     }
 
     #[test]

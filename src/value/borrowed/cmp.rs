@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::OwnedValue;
 
 #[allow(clippy::cast_sign_loss, clippy::default_trait_access)]
-impl<'a> PartialEq for Value<'a> {
+impl<'value> PartialEq for Value<'value> {
     #[inline]
     #[must_use]
     fn eq(&self, other: &Self) -> bool {
@@ -17,9 +17,9 @@ impl<'a> PartialEq for Value<'a> {
     }
 }
 
-impl<'v, T> PartialEq<&T> for Value<'v>
+impl<'value, T> PartialEq<&T> for Value<'value>
 where
-    Value<'v>: PartialEq<T>,
+    Value<'value>: PartialEq<T>,
 {
     #[inline]
     #[must_use]
@@ -28,7 +28,7 @@ where
     }
 }
 
-impl<'a> PartialEq<OwnedValue> for Value<'a> {
+impl<'value> PartialEq<OwnedValue> for Value<'value> {
     #[inline]
     #[must_use]
     fn eq(&self, other: &OwnedValue) -> bool {
@@ -172,10 +172,40 @@ impl<'v> PartialEq<f32> for Value<'v> {
         self.as_f32().map(|t| t.eq(other)).unwrap_or_default()
     }
 }
+
 impl<'v> PartialEq<f64> for Value<'v> {
     #[inline]
     #[must_use]
     fn eq(&self, other: &f64) -> bool {
         self.as_f64().map(|t| t.eq(other)).unwrap_or_default()
+    }
+}
+
+impl<'v, T> PartialEq<&[T]> for Value<'v>
+where
+    Value<'v>: PartialEq<T>,
+{
+    #[inline]
+    #[must_use]
+    fn eq(&self, other: &&[T]) -> bool {
+        self.as_array().map(|t| t.eq(other)).unwrap_or_default()
+    }
+}
+
+impl<'v, K, T, S> PartialEq<std::collections::HashMap<K, T, S>> for Value<'v>
+where
+    K: AsRef<str> + std::hash::Hash + Eq,
+    Value<'v>: PartialEq<T>,
+    S: std::hash::BuildHasher,
+{
+    #[inline]
+    #[must_use]
+    fn eq(&self, other: &std::collections::HashMap<K, T, S>) -> bool {
+        self.as_object().map_or(false, |object| {
+            object.len() == other.len()
+                && other
+                    .iter()
+                    .all(|(key, value)| object.get(key.as_ref()).map_or(false, |v| *v == *value))
+        })
     }
 }

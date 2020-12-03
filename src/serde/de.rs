@@ -1,7 +1,8 @@
 use crate::serde_ext::de::IntoDeserializer;
-use crate::{serde_ext, str, stry, Deserializer, Error, ErrorType, Node, Result, StaticNode};
+use crate::{serde_ext, stry, Deserializer, Error, ErrorType, Node, Result, StaticNode};
 use serde_ext::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_ext::forward_to_deserialize_any;
+use std::str;
 
 impl<'a, 'de> de::Deserializer<'de> for &'a mut Deserializer<'de>
 where
@@ -306,7 +307,7 @@ where
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
     fn deserialize_struct<V>(
-        self,
+        mut self,
         _name: &'static str,
         _fields: &'static [&'static str],
         visitor: V,
@@ -314,7 +315,16 @@ where
     where
         V: Visitor<'de>,
     {
-        self.deserialize_map(visitor)
+        match self.next() {
+            // Give the visitor access to each element of the sequence.
+            Ok(Node::Object(len, _)) => {
+                visitor.visit_map(CommaSeparated::new(&mut self, len as usize))
+            }
+            Ok(Node::Array(len, _)) => {
+                visitor.visit_seq(CommaSeparated::new(&mut self, len as usize))
+            }
+            _ => Err(Deserializer::error(ErrorType::ExpectedMap)),
+        }
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
@@ -352,7 +362,6 @@ struct CommaSeparated<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
     len: usize,
 }
-
 impl<'a, 'de> CommaSeparated<'a, 'de> {
     #[cfg_attr(not(feature = "no-inline"), inline)]
     fn new(de: &'a mut Deserializer<'de>, len: usize) -> Self {

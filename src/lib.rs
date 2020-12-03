@@ -5,7 +5,7 @@
 #![warn(unused_extern_crates)]
 #![deny(
     clippy::all,
-    clippy::result_unwrap_used,
+    clippy::unwrap_used,
     clippy::unnecessary_unwrap,
     clippy::pedantic
 )]
@@ -108,9 +108,9 @@
 //! let v: simd_json::OwnedValue = simd_json::to_owned_value(&mut d).unwrap();
 //! ```
 //!
-//! ### Serde Comaptible API
+//! ### Serde Compatible API
 //!
-//! ```
+//! ```ignore
 //! use simd_json;
 //! use serde_json::Value;
 //!
@@ -208,7 +208,6 @@ mod stage2;
 pub mod value;
 
 use std::mem;
-use std::str;
 pub use value_trait::StaticNode;
 
 pub use crate::error::{Error, ErrorType};
@@ -224,19 +223,19 @@ mod known_key;
 pub use known_key::{Error as KnownKeyError, KnownKey};
 
 pub use crate::tape::{Node, Tape};
+use std::alloc::{alloc, handle_alloc_error, Layout};
+use std::ops::{Deref, DerefMut};
+use std::ptr::NonNull;
 
 /// Creates a tape from the input for later consumption
 /// # Errors
 ///
 /// Will return `Err` if `s` is invalid JSON.
 pub fn to_tape<'input>(s: &'input mut [u8]) -> Result<Vec<Node<'input>>> {
-    Deserializer::from_slice(s).map(|de| de.tape)
+    Deserializer::from_slice(s).map(Deserializer::into_tape)
 }
 
-pub(crate) struct Utf8CheckingState<T> {
-    has_error: T,
-    previous: ProcessedUtfBytes<T>,
-}
+pub(crate) type Utf8CheckingState<T> = ProcessedUtfBytes<T>;
 
 pub(crate) trait Stage1Parse<T> {
     fn new_utf8_checking_state() -> Utf8CheckingState<T>;
@@ -278,7 +277,7 @@ pub(crate) trait Stage1Parse<T> {
         unsafe {
             *quote_bits = self.cmp_mask_against_input(b'"');
             *quote_bits &= !odd_ends;
-            // remove from the valid quoted region the unescapted characters.
+            // remove from the valid quoted region the unescaped characters.
             let mut quote_mask: u64 = Self::compute_quote_mask(*quote_bits);
             quote_mask ^= *prev_iter_inside_quote;
             // All Unicode characters may be placed within the
@@ -385,14 +384,19 @@ pub(crate) trait Stage1Parse<T> {
 
 /// Deserializer struct to deserialize a JSON
 pub struct Deserializer<'de> {
-    // Note: we use the 2nd part as both index and lenght since only one is ever
+    // Note: we use the 2nd part as both index and length since only one is ever
     // used (array / object use len) everything else uses idx
     pub(crate) tape: Vec<Node<'de>>,
     idx: usize,
 }
 
 impl<'de> Deserializer<'de> {
-    #[cfg(feature = "serde_impl")]
+    /// Extracts the tape from the Deserializer
+    #[must_use]
+    pub fn into_tape(self) -> Vec<Node<'de>> {
+        self.tape
+    }
+
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     fn error(error: ErrorType) -> Error {
         Deserializer::raw_error(0, '?', error)
@@ -419,7 +423,7 @@ impl<'de> Deserializer<'de> {
     }
 
     /// Creates a serializer from a mutable slice of bytes using a temporary
-    /// buffer for strings for them to be coppied in and out if needed
+    /// buffer for strings for them to be copied in and out if needed
     ///
     /// # Errors
     ///
@@ -433,23 +437,43 @@ impl<'de> Deserializer<'de> {
 
         // let buf_start: usize = input.as_ptr() as *const () as usize;
         // let needs_relocation = (buf_start + input.len()) % page_size::get() < SIMDJSON_PADDING;
-        let mut buffer: Vec<u8> = Vec::with_capacity(len + SIMDJSON_PADDING * 2);
+        let mut buffer = AlignedBuf::with_capacity(len + SIMDJSON_PADDING * 2);
 
-        let align = buffer
-            .as_slice()
-            .as_ptr()
-            .align_offset(SIMDJSON_PADDING / 2);
+        Self::from_slice_with_buffers(input, &mut buffer, string_buffer)
+    }
+
+    /// Creates a serializer from a mutable slice of bytes using a temporary
+    /// buffer for strings for them to be copied in and out if needed
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if `s` is invalid JSON.
+    pub fn from_slice_with_buffers(
+        input: &'de mut [u8],
+        input_buffer: &mut AlignedBuf,
+        string_buffer: &mut [u8],
+    ) -> Result<Self> {
+        let len = input.len();
+
+        if len > std::u32::MAX as usize {
+            return Err(Deserializer::error(ErrorType::InputTooLarge));
+        }
+
+        if input_buffer.capacity() < len + SIMDJSON_PADDING * 2 {
+            *input_buffer = AlignedBuf::with_capacity(len + SIMDJSON_PADDING * 2);
+        }
+
         unsafe {
-            buffer
+            input_buffer
                 .as_mut_slice()
-                .get_unchecked_mut(align..align + len)
+                .get_unchecked_mut(..len)
                 .clone_from_slice(input);
-            *(buffer.get_unchecked_mut(len + align)) = 0;
-            buffer.set_len(len + align);
+            *(input_buffer.get_unchecked_mut(len)) = 0;
+            input_buffer.set_len(len);
         };
 
         let s1_result: std::result::Result<Vec<u32>, ErrorType> =
-            unsafe { Deserializer::find_structural_bits(&buffer[align..]) };
+            unsafe { Deserializer::find_structural_bits(&input_buffer) };
 
         let structural_indexes = match s1_result {
             Ok(i) => i,
@@ -459,7 +483,7 @@ impl<'de> Deserializer<'de> {
         };
 
         let tape =
-            Deserializer::build_tape(input, &buffer[align..], string_buffer, &structural_indexes)?;
+            Deserializer::build_tape(input, &input_buffer, string_buffer, &structural_indexes)?;
 
         Ok(Deserializer { tape, idx: 0 })
     }
@@ -486,8 +510,8 @@ impl<'de> Deserializer<'de> {
         input: &[u8],
     ) -> std::result::Result<Vec<u32>, ErrorType> {
         let len = input.len();
-        // 6 is a heuristic number to estimate it turns out a rate of 1/6 structural caracters lears
-        // almost never to relocations.
+        // 6 is a heuristic number to estimate it turns out a rate of 1/6 structural characters
+        // leads almost never to relocations.
         let mut structural_indexes = Vec::with_capacity(len / 6);
         structural_indexes.push(0); // push extra root element
 
@@ -633,6 +657,50 @@ impl<'de> Deserializer<'de> {
     }
 }
 
+/// SIMD aligned buffer
+pub struct AlignedBuf {
+    inner: Vec<u8>,
+}
+
+impl AlignedBuf {
+    /// Creates a new buffer that is  aligned with the simd register size
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        let layout = match Layout::from_size_align(capacity, SIMDJSON_PADDING / 2) {
+            Ok(layout) => layout,
+            Err(_) => Self::capacity_overflow(),
+        };
+        if mem::size_of::<usize>() < 8 && capacity > isize::MAX as usize {
+            Self::capacity_overflow()
+        }
+        let ptr = match unsafe { NonNull::new(alloc(layout)) } {
+            Some(ptr) => ptr,
+            None => handle_alloc_error(layout),
+        };
+        Self {
+            inner: unsafe { Vec::from_raw_parts(ptr.as_ptr(), 0, capacity) },
+        }
+    }
+
+    fn capacity_overflow() -> ! {
+        panic!("capacity overflow");
+    }
+}
+
+impl Deref for AlignedBuf {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for AlignedBuf {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unnecessary_operation, clippy::non_ascii_literal)]
@@ -721,15 +789,14 @@ mod tests {
         assert_eq!(to_value(&mut d), Ok(o));
     }
     // How much do we care about this, it's within the same range and
-    // based on floating point math inprecisions during parsing.
+    // based on floating point math imprecisions during parsing.
     // Is this a real issue worth improving?
     #[test]
     fn silly_float1() {
         let v = Value::from(3.090_144_804_232_201_7e305);
         let s = v.encode();
-        dbg!(&s);
         let mut bytes = s.as_bytes().to_vec();
-        let parsed = to_owned_value(&mut bytes).expect("failed to parse gernated float");
+        let parsed = to_owned_value(&mut bytes).expect("failed to parse generated float");
         assert_eq!(v, parsed);
     }
 
@@ -738,7 +805,6 @@ mod tests {
     fn silly_float2() {
         let v = Value::from(-6.990_585_694_841_803e305);
         let s = v.encode();
-        dbg!(&s);
         let mut bytes = s.as_bytes().to_vec();
         let parsed = to_owned_value(&mut bytes).expect("failed to parse gernated float");
         assert_eq!(v, parsed);
@@ -1350,7 +1416,7 @@ mod tests_serde {
         assert_eq!(v_simd, v_serde);
         let mut h = Object::new();
         h.insert("snot".into(), Value::from("badger"));
-        assert_eq!(dbg!(to_value(&mut d1)), Ok(Value::from(h)));
+        assert_eq!(to_value(&mut d1), Ok(Value::from(h)));
     }
 
     #[test]

@@ -3,6 +3,9 @@ use std::fmt;
 /// Error types encountered while parsing
 #[derive(Debug)]
 pub enum ErrorType {
+    /// Simd-json only supports inputs of up to
+    /// 4GB in size.
+    InputTooLarge,
     /// The key of a map isn't a string
     BadKeyType,
     /// The data ended early
@@ -89,7 +92,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
-#[cfg_attr(tarpaulin, skip)]
+#[cfg(not(tarpaulin_include))]
 impl PartialEq for ErrorType {
     #[must_use]
     fn eq(&self, other: &Self) -> bool {
@@ -157,6 +160,7 @@ impl Error {
         }
     }
     /// Create a generic error
+    #[must_use = "Error creation"]
     pub fn generic(t: ErrorType) -> Self {
         Self {
             index: 0,
@@ -165,8 +169,9 @@ impl Error {
         }
     }
 }
+impl std::error::Error for Error {}
 
-#[cfg_attr(tarpaulin, skip)]
+#[cfg(not(tarpaulin_include))]
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -177,7 +182,7 @@ impl fmt::Display for Error {
     }
 }
 
-#[cfg_attr(tarpaulin, skip)]
+#[cfg(not(tarpaulin_include))]
 impl From<Error> for std::io::Error {
     fn from(e: Error) -> Self {
         std::io::Error::new(std::io::ErrorKind::InvalidData, e)
