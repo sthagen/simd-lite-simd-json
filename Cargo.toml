@@ -1,6 +1,6 @@
 [package]
 name = "simd-json"
-version = "0.3.24-alpha.0"
+version = "0.3.25-alpha.0"
 authors = ["Heinz N. Gies <heinz@licenser.net>", "Sunny Gleason"]
 edition = "2018"
 exclude = [ "data/*", "fuzz/*"]
@@ -59,9 +59,6 @@ swar-number-parsing = []
 
 # serde compatibility
 serde_impl = [ "serde", "serde_json", "halfbrown/serde" ]
-
-# Support for ARM NEON SIMD
-neon = ["value-trait/neon"]
 
 # Allow fallback to non simd CPUs
 allow-non-simd = []

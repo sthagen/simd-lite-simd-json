@@ -159,11 +159,11 @@ pub use crate::sse42::deser::*;
 #[cfg(all(target_feature = "sse4.2", not(target_feature = "avx2")))]
 use crate::sse42::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
 
-#[cfg(all(target_feature = "neon", feature = "neon"))]
+#[cfg(target_feature = "neon")]
 mod neon;
-#[cfg(all(target_feature = "neon", feature = "neon"))]
+#[cfg(target_feature = "neon")]
 pub use crate::neon::deser::*;
-#[cfg(all(target_feature = "neon", feature = "neon"))]
+#[cfg(target_feature = "neon")]
 use crate::neon::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
 
 // We import this as generics
@@ -231,7 +231,7 @@ use std::ptr::NonNull;
 /// # Errors
 ///
 /// Will return `Err` if `s` is invalid JSON.
-pub fn to_tape<'input>(s: &'input mut [u8]) -> Result<Vec<Node<'input>>> {
+pub fn to_tape(s: &mut [u8]) -> Result<Vec<Node>> {
     Deserializer::from_slice(s).map(Deserializer::into_tape)
 }
 
@@ -496,6 +496,11 @@ impl<'de> Deserializer<'de> {
 
     /// Same as next() but we pull out the check so we don't need to
     /// stry every time. Use this only if you know the next element exists!
+    ///
+    /// # Safety
+    ///
+    /// This function is not safe to use, it is meant for internal use
+    /// where it's know the tape isn't finished.
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     pub unsafe fn next_(&mut self) -> Node<'de> {
         self.idx += 1;
