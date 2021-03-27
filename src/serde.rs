@@ -19,7 +19,7 @@ use serde_ext::Deserialize;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::io;
-use value_trait::Value;
+use value_trait::prelude::*;
 type ConvertResult<T> = std::result::Result<T, SerdeConversionError>;
 
 /// Error while converting from or to serde values
@@ -93,7 +93,7 @@ where
 {
     let mut data = Vec::new();
     if let Err(e) = rdr.read_to_end(&mut data) {
-        return Err(Error::generic(ErrorType::IO(e)));
+        return Err(Error::generic(ErrorType::Io(e)));
     };
     let mut deserializer = stry!(Deserializer::from_slice(&mut data));
     T::deserialize(&mut deserializer)

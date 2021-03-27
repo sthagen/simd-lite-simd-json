@@ -49,7 +49,7 @@ pub enum ErrorType {
     /// Invalid number
     InvalidNumber,
     /// Inbalid UTF8 codepoint
-    InvalidUTF8,
+    InvalidUtf8,
     /// Invalid Unicode escape sequence
     InvalidUnicodeEscape,
     /// Inbalid Unicode codepoint
@@ -61,7 +61,7 @@ pub enum ErrorType {
     /// Parser Erropr
     Parser,
     /// Early End Of File
-    EOF,
+    Eof,
     /// Generic serde error
     Serde(String),
     /// Generic syntax error
@@ -83,12 +83,12 @@ pub enum ErrorType {
     /// Overflow of a limited buffer
     Overflow,
     /// IO error
-    IO(std::io::Error),
+    Io(std::io::Error),
 }
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        Self::generic(ErrorType::IO(e))
+        Self::generic(ErrorType::Io(e))
     }
 }
 
@@ -97,7 +97,7 @@ impl PartialEq for ErrorType {
     #[must_use]
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::IO(_), Self::IO(_))
+            (Self::Io(_), Self::Io(_))
             | (Self::BadKeyType, Self::BadKeyType)
             | (Self::EarlyEnd, Self::EarlyEnd)
             | (Self::ExpectedArray, Self::ExpectedArray)
@@ -119,13 +119,13 @@ impl PartialEq for ErrorType {
             | (Self::InvalidEscape, Self::InvalidEscape)
             | (Self::InvalidExponent, Self::InvalidExponent)
             | (Self::InvalidNumber, Self::InvalidNumber)
-            | (Self::InvalidUTF8, Self::InvalidUTF8)
+            | (Self::InvalidUtf8, Self::InvalidUtf8)
             | (Self::InvalidUnicodeEscape, Self::InvalidUnicodeEscape)
             | (Self::InvlaidUnicodeCodepoint, Self::InvlaidUnicodeCodepoint)
             | (Self::KeyMustBeAString, Self::KeyMustBeAString)
             | (Self::NoStructure, Self::NoStructure)
             | (Self::Parser, Self::Parser)
-            | (Self::EOF, Self::EOF)
+            | (Self::Eof, Self::Eof)
             | (Self::Syntax, Self::Syntax)
             | (Self::TrailingCharacters, Self::TrailingCharacters)
             | (Self::UnexpectedCharacter, Self::UnexpectedCharacter)

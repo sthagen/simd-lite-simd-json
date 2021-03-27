@@ -9,7 +9,7 @@ use value_trait::generator::BaseGenerator;
 
 macro_rules! iomap {
     ($e:expr) => {
-        ($e).map_err(|err| Error::generic(ErrorType::IO(err)))
+        ($e).map_err(|err| Error::generic(ErrorType::Io(err)))
     };
 }
 
@@ -600,7 +600,7 @@ mod test {
         #[derive(Clone, Debug, PartialEq, serde::Serialize)]
         enum Segment {
             Id { mid: usize },
-        };
+        }
 
         assert_eq!(
             "{\n  \"Id\": {\n    \"mid\": 0\n  }\n}",
@@ -613,7 +613,7 @@ mod test {
         #[derive(Clone, Debug, PartialEq, serde::Serialize)]
         enum Segment {
             Id { mid: usize },
-        };
+        }
 
         assert_eq!(
             "{\"Id\":{\"mid\":0}}",
