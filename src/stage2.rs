@@ -69,9 +69,9 @@ pub fn is_valid_false_atom(loc: &[u8]) -> bool {
 
         // FIXME the original code looks like this:
         // error = ((locval & mask5) ^ fv) as u32;
-        // but that failes on falsy as the u32 conversion
+        // but that fails on falsy as the u32 conversion
         // will mask the error on the y so we re-write it
-        // it would be interesting what the consequecnes are
+        // it would be interesting what the consequences are
         error = (locval & MASK5) ^ FV;
         error |= u64::from(is_not_structural_or_whitespace(*get!(loc, 5)));
     }
@@ -118,7 +118,7 @@ impl<'de> Deserializer<'de> {
         structural_indexes: &[u32],
     ) -> Result<Vec<Node<'de>>> {
         // While a valid json can have at max len/2 (`[[[]]]`)elements that are relevant
-        // a invalid json might exceed this `[[[[[[` and we need to pretect against that.
+        // a invalid json might exceed this `[[[[[[` and we need to protect against that.
         let mut res: Vec<Node<'de>> = Vec::with_capacity(structural_indexes.len());
         let mut stack = Vec::with_capacity(structural_indexes.len());
         unsafe {
@@ -146,7 +146,7 @@ impl<'de> Deserializer<'de> {
                 match $e {
                     ::std::result::Result::Ok(val) => val,
                     ::std::result::Result::Err(err) => {
-                        // We need to ensure that rust doens't
+                        // We need to ensure that rust doesn't
                         // try to free strings that we never
                         // allocated
                         unsafe {
@@ -280,7 +280,7 @@ impl<'de> Deserializer<'de> {
 
         macro_rules! fail {
             () => {
-                // We need to ensure that rust doens't
+                // We need to ensure that rust doesn't
                 // try to free strings that we never
                 // allocated
                 unsafe {
@@ -289,7 +289,7 @@ impl<'de> Deserializer<'de> {
                 return Err(Error::new(idx, c as char, ErrorType::InternalError));
             };
             ($t:expr) => {
-                // We need to ensure that rust doens't
+                // We need to ensure that rust doesn't
                 // try to free strings that we never
                 // allocated
                 unsafe {
@@ -299,7 +299,7 @@ impl<'de> Deserializer<'de> {
             };
         }
         // State start, we pull this outside of the
-        // loop to reduce the number of requried checks
+        // loop to reduce the number of required checks
         update_char!();
         match c {
             b'{' => {
@@ -340,7 +340,7 @@ impl<'de> Deserializer<'de> {
                     cnt = 0;
                     state = State::ScopeEnd;
                 } else {
-                    state = State::MainArraySwitch
+                    state = State::MainArraySwitch;
                 }
             }
             b't' => {
@@ -428,7 +428,7 @@ impl<'de> Deserializer<'de> {
                     match c {
                         b'"' => {
                             insert_str!();
-                            object_continue!()
+                            object_continue!();
                         }
                         b't' => {
                             insert_res!(Node::Static(StaticNode::Bool(true)));
@@ -537,7 +537,7 @@ impl<'de> Deserializer<'de> {
                     match c {
                         b'"' => {
                             insert_str!();
-                            array_continue!()
+                            array_continue!();
                         }
                         b't' => {
                             insert_res!(Node::Static(StaticNode::Bool(true)));
@@ -634,5 +634,46 @@ mod test {
         assert!(is_valid_null_atom(b"null    "));
         assert!(!is_valid_null_atom(b"nul     "));
         assert!(!is_valid_null_atom(b" ull    "));
+    }
+
+    #[cfg(feature = "serde_impl")]
+    #[test]
+    fn parsing_errors() {
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut b"time".to_vec()),
+            Err(Error::new(0, 't', ErrorType::ExpectedNull))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut b"falsy".to_vec()),
+            Err(Error::new(0, 'f', ErrorType::ExpectedNull))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut b"new".to_vec()),
+            Err(Error::new(0, 'n', ErrorType::ExpectedNull))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut b"[true, time]".to_vec()),
+            Err(Error::new(7, 't', ErrorType::ExpectedBoolean))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut b"[true, falsy]".to_vec()),
+            Err(Error::new(7, 'f', ErrorType::ExpectedBoolean))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut b"[null, new]".to_vec()),
+            Err(Error::new(7, 'n', ErrorType::ExpectedNull))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut br#"{"1":time}"#.to_vec()),
+            Err(Error::new(5, 't', ErrorType::ExpectedBoolean))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut br#"{"0":falsy}"#.to_vec()),
+            Err(Error::new(5, 'f', ErrorType::ExpectedBoolean))
+        );
+        assert_eq!(
+            crate::serde::from_slice::<bool>(&mut br#"{"0":new}"#.to_vec()),
+            Err(Error::new(5, 'n', ErrorType::ExpectedNull))
+        );
     }
 }

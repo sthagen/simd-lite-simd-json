@@ -26,7 +26,7 @@ impl<'value> Serialize for Value<'value> {
             Value::Static(StaticNode::I64(i)) => serializer.serialize_i64(*i),
             #[cfg(feature = "128bit")]
             Value::Static(StaticNode::I128(i)) => serializer.serialize_i128(*i),
-            Value::String(s) => serializer.serialize_str(&s),
+            Value::String(s) => serializer.serialize_str(s),
             Value::Array(v) => {
                 let mut seq = serializer.serialize_seq(Some(v.len()))?;
                 for e in v {
@@ -37,7 +37,7 @@ impl<'value> Serialize for Value<'value> {
             Value::Object(m) => {
                 let mut map = serializer.serialize_map(Some(m.len()))?;
                 for (k, v) in m.iter() {
-                    let k: &str = &k;
+                    let k: &str = k;
                     map.serialize_entry(k, v)?;
                 }
                 map.end()
@@ -687,28 +687,28 @@ mod test {
     fn null() {
         let v = Value::Static(crate::StaticNode::Null);
         let s = serde_json::to_string(&v).expect("Failed to serialize");
-        assert_eq!(s, "null")
+        assert_eq!(s, "null");
     }
 
     #[test]
     fn bool_true() {
         let v = Value::Static(StaticNode::Bool(true));
         let s = serde_json::to_string(&v).expect("Failed to serialize");
-        assert_eq!(s, "true")
+        assert_eq!(s, "true");
     }
 
     #[test]
     fn bool_false() {
         let v = Value::Static(StaticNode::Bool(false));
         let s = serde_json::to_string(&v).expect("Failed to serialize");
-        assert_eq!(s, "false")
+        assert_eq!(s, "false");
     }
 
     #[test]
     fn float() {
         let v = Value::Static(StaticNode::F64(1.0));
         let s = serde_json::to_string(&v).expect("Failed to serialize");
-        assert_eq!(s, "1.0")
+        assert_eq!(s, "1.0");
     }
 
     #[test]
@@ -726,7 +726,7 @@ mod test {
     fn int() {
         let v = Value::Static(StaticNode::I64(42));
         let s = serde_json::to_string(&v).expect("Failed to serialize");
-        assert_eq!(s, "42")
+        assert_eq!(s, "42");
     }
 
     #[test]
@@ -736,7 +736,7 @@ mod test {
             Value::Static(StaticNode::I64(23)),
         ]);
         let s = serde_json::to_string(&v).expect("Failed to serialize");
-        assert_eq!(s, "[42,23]")
+        assert_eq!(s, "[42,23]");
     }
 
     #[test]
@@ -746,7 +746,7 @@ mod test {
         m.insert("b".into(), Value::from(23));
         let v = Value::Object(Box::new(m));
         let s = serde_json::to_string(&v).expect("Failed to serialize");
-        assert_eq!(s, r#"{"a":42,"b":23}"#)
+        assert_eq!(s, r#"{"a":42,"b":23}"#);
     }
 
     #[derive(Deserialize, Serialize, PartialEq, Debug, Default)]
@@ -764,10 +764,11 @@ mod test {
         v_u64: u64,
         v_usize: usize,
         v_u32: u32,
-        v_u66: u16,
+        v_u16: u16,
         v_u8: u8,
         v_bool: bool,
         v_str: String,
+        v_char: char,
         //v_enum: Enum,
         v_map: Map,
         v_arr: Vec<usize>,
@@ -804,10 +805,11 @@ mod test {
         v_u64 in any::<u64>(),
         v_usize in any::<u32>().prop_map(|v| v as usize),
         v_u32 in any::<u32>(),
-        v_u66 in any::<u16>(),
+        v_u16 in any::<u16>(),
         v_u8 in any::<u8>(),
         v_bool in any::<bool>(),
         v_str in ".*",
+        v_char in any::<char>(),
         ) -> Obj {
          Obj {
             v_i128,
@@ -819,10 +821,11 @@ mod test {
             v_u64,
             v_usize,
             v_u32,
-            v_u66,
+            v_u16,
             v_u8,
             v_bool,
             v_str,
+            v_char,
             ..Obj::default()
         }
       }
@@ -842,11 +845,11 @@ mod test {
             let de: Obj = from_slice(&mut vec).expect("from_slice");
             prop_assert_eq!(&obj, &de);
 
-            let borroed: crate::BorrowedValue = serde_json::from_slice(& vec1).expect("from_slice");
+            let borrowed: crate::BorrowedValue = serde_json::from_slice(& vec1).expect("from_slice");
             let owned: crate::OwnedValue = serde_json::from_slice(& vec2).expect("from_slice");
-            prop_assert_eq!(&borroed, &owned);
+            prop_assert_eq!(&borrowed, &owned);
 
-            let de: Obj = Obj::deserialize(borroed).expect("deserialize");
+            let de: Obj = Obj::deserialize(borrowed).expect("deserialize");
             prop_assert_eq!(&obj, &de);
             let de: Obj = Obj::deserialize(owned).expect("deserialize");
             prop_assert_eq!(&obj, &de);

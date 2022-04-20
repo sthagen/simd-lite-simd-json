@@ -5,7 +5,8 @@ use crate::Error;
 use crate::StaticNode;
 use crate::{cow::Cow, stry, ErrorType};
 use serde_ext::de::{
-    self, Deserialize, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor,
+    self, Deserialize, DeserializeSeed, Deserializer, EnumAccess, IntoDeserializer, MapAccess,
+    SeqAccess, VariantAccess, Visitor,
 };
 use serde_ext::forward_to_deserialize_any;
 use std::{fmt, slice};
@@ -65,6 +66,42 @@ impl<'de> de::Deserializer<'de> for Value<'de> {
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
+    fn deserialize_enum<V>(
+        self,
+        _name: &str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error>
+    where
+        V: Visitor<'de>,
+    {
+        let (variant, value) = match self {
+            Value::Object(value) => {
+                let mut iter = value.into_iter();
+                let (variant, value) = match iter.next() {
+                    Some(v) => v,
+                    None => {
+                        // FIXME: better error
+                        return Err(crate::Deserializer::error(ErrorType::ExpectedString));
+                    }
+                };
+                // enums are encoded in json as maps with a single key:value pair
+                if iter.next().is_some() {
+                    // FIXME: better error
+                    return Err(crate::Deserializer::error(ErrorType::ExpectedString));
+                }
+                (variant, Some(value))
+            }
+            Value::String(variant) => (variant, None),
+            _other => {
+                return Err(crate::Deserializer::error(ErrorType::ExpectedMap));
+            }
+        };
+
+        visitor.visit_enum(EnumDeserializer { variant, value })
+    }
+
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     fn deserialize_struct<V>(
         self,
         _name: &'static str,
@@ -88,7 +125,7 @@ impl<'de> de::Deserializer<'de> for Value<'de> {
     forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
             bytes byte_buf unit unit_struct newtype_struct seq tuple
-            tuple_struct map enum identifier ignored_any
+            tuple_struct map identifier ignored_any
     }
 }
 
@@ -424,6 +461,115 @@ where
     }
 }
 
+struct EnumDeserializer<'de> {
+    variant: Cow<'de, str>,
+    value: Option<Value<'de>>,
+}
+
+impl<'de> EnumAccess<'de> for EnumDeserializer<'de> {
+    type Error = Error;
+    type Variant = VariantDeserializer<'de>;
+
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, VariantDeserializer<'de>), Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let variant = self.variant.into_deserializer();
+        let visitor = VariantDeserializer { value: self.value };
+        seed.deserialize(variant).map(|v| (v, visitor))
+    }
+}
+
+impl<'de> IntoDeserializer<'de, Error> for Value<'de> {
+    type Deserializer = Self;
+
+    fn into_deserializer(self) -> Self::Deserializer {
+        self
+    }
+}
+
+struct VariantDeserializer<'de> {
+    value: Option<Value<'de>>,
+}
+
+impl<'de> VariantAccess<'de> for VariantDeserializer<'de> {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<(), Error> {
+        match self.value {
+            Some(value) => Deserialize::deserialize(value),
+            None => Ok(()),
+        }
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        match self.value {
+            Some(value) => seed.deserialize(value),
+            None => Err(crate::Deserializer::error(ErrorType::ExpectedMap))
+            // None => Err(serde::de::Error::invalid_type(
+            //     Unexpected::UnitVariant,
+            //     &"newtype variant",
+            // )),
+        }
+    }
+
+    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(Value::Array(v)) => {
+                if v.is_empty() {
+                    visitor.visit_unit()
+                } else {
+                    visitor.visit_seq(Array(v.iter()))
+                    // visit_array_ref(v, visitor)
+                }
+            }
+            // FIXME
+            Some(_) | None => Err(crate::Deserializer::error(ErrorType::ExpectedMap))
+            // Some(other) => Err(serde::de::Error::invalid_type(
+            //     other.unexpected(),
+            //     &"tuple variant",
+            // )),
+            // None => Err(serde::de::Error::invalid_type(
+            //     Unexpected::UnitVariant,
+            //     &"tuple variant",
+            // )),
+        }
+    }
+
+    fn struct_variant<V>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(Value::Object(v)) => visitor.visit_map(ObjectAccess {
+                i: v.iter(),
+                v: &Value::Static(StaticNode::Null),
+            }),//visit_object(v, visitor),
+            // FIXME
+            Some(_) | None => Err(crate::Deserializer::error(ErrorType::ExpectedMap))
+
+            // Some(other) => Err(serde::de::Error::invalid_type(
+            //     other.unexpected(),
+            //     &"struct variant",
+            // )),
+            // None => Err(serde::de::Error::invalid_type(
+            //     Unexpected::UnitVariant,
+            //     &"struct variant",
+            // )),
+        }
+    }
+}
+
 impl<'de> de::Deserializer<'de> for &'de Value<'de> {
     type Error = Error;
 
@@ -480,13 +626,159 @@ impl<'de> de::Deserializer<'de> for &'de Value<'de> {
         }
     }
 
+    #[cfg_attr(not(feature = "no-inline"), inline)]
+    fn deserialize_enum<V>(
+        self,
+        _name: &str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error>
+    where
+        V: Visitor<'de>,
+    {
+        let (variant, value) = match self {
+            Value::Object(value) => {
+                let mut iter = value.iter();
+                let (variant, value) = match iter.next() {
+                    Some(v) => v,
+                    None => {
+                        // FIXME: better error
+                        return Err(crate::Deserializer::error(ErrorType::ExpectedString));
+                    }
+                };
+                // enums are encoded in json as maps with a single key:value pair
+                if iter.next().is_some() {
+                    // FIXME: better error
+                    return Err(crate::Deserializer::error(ErrorType::ExpectedString));
+                }
+                (variant, Some(value))
+            }
+            Value::String(variant) => (variant, None),
+            _other => {
+                return Err(crate::Deserializer::error(ErrorType::ExpectedMap));
+            }
+        };
+
+        visitor.visit_enum(EnumRefDeserializer { variant, value })
+    }
+
     forward_to_deserialize_any! {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
             bytes byte_buf unit unit_struct newtype_struct seq tuple
-            tuple_struct map enum identifier ignored_any
+            tuple_struct map identifier ignored_any
     }
 }
 
+struct EnumRefDeserializer<'de> {
+    variant: &'de Cow<'de, str>,
+    value: Option<&'de Value<'de>>,
+}
+
+impl<'de> EnumAccess<'de> for EnumRefDeserializer<'de> {
+    type Error = Error;
+    type Variant = VariantRefDeserializer<'de>;
+
+    #[cfg(feature = "beef")]
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let variant = self.variant.into_deserializer();
+        let visitor = VariantRefDeserializer { value: self.value };
+        seed.deserialize(variant).map(|v| (v, visitor))
+    }
+    #[cfg(not(feature = "beef"))]
+    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Error>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        // FIXME: why do we need to clone here
+        let variant = self.variant.clone().into_deserializer();
+        let visitor = VariantRefDeserializer { value: self.value };
+        seed.deserialize(variant).map(|v| (v, visitor))
+    }
+}
+struct VariantRefDeserializer<'de> {
+    value: Option<&'de Value<'de>>,
+}
+
+impl<'de> VariantAccess<'de> for VariantRefDeserializer<'de> {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<(), Error> {
+        match self.value {
+            Some(value) => Deserialize::deserialize(value),
+            None => Ok(()),
+        }
+    }
+
+    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Error>
+    where
+        T: DeserializeSeed<'de>,
+    {
+        match self.value {
+            Some(value) => seed.deserialize(value),
+            None => Err(crate::Deserializer::error(ErrorType::ExpectedMap))
+            // None => Err(serde::de::Error::invalid_type(
+            //     Unexpected::UnitVariant,
+            //     &"newtype variant",
+            // )),
+        }
+    }
+
+    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(Value::Array(v)) => {
+                if v.is_empty() {
+                    visitor.visit_unit()
+                } else {
+                    visitor.visit_seq(Array(v.iter()))
+                    // visit_array_ref(v, visitor)
+                }
+            }
+            // FIXME
+            Some(_) | None => Err(crate::Deserializer::error(ErrorType::ExpectedMap))
+            // Some(other) => Err(serde::de::Error::invalid_type(
+            //     other.unexpected(),
+            //     &"tuple variant",
+            // )),
+            // None => Err(serde::de::Error::invalid_type(
+            //     Unexpected::UnitVariant,
+            //     &"tuple variant",
+            // )),
+        }
+    }
+
+    fn struct_variant<V>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Error>
+    where
+        V: Visitor<'de>,
+    {
+        match self.value {
+            Some(Value::Object(v)) => visitor.visit_map(ObjectAccess {
+                i: v.iter(),
+                v: &Value::Static(StaticNode::Null),
+            }),//visit_object(v, visitor),
+            // FIXME
+            Some(_) | None => Err(crate::Deserializer::error(ErrorType::ExpectedMap))
+
+            // Some(other) => Err(serde::de::Error::invalid_type(
+            //     other.unexpected(),
+            //     &"struct variant",
+            // )),
+            // None => Err(serde::de::Error::invalid_type(
+            //     Unexpected::UnitVariant,
+            //     &"struct variant",
+            // )),
+        }
+    }
+}
 struct SeqRefDeserializer<'de> {
     iter: slice::Iter<'de, Value<'de>>,
 }
@@ -656,5 +948,81 @@ mod test {
             crate::to_borrowed_value(unsafe { raw_json.as_bytes_mut() })
                 .and_then(super::super::from_value);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn deserialize() {
+        use halfbrown::{hashmap, HashMap};
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        #[serde(rename_all = "lowercase")]
+        pub enum Rotate {
+            Left,
+            Right,
+            Up,
+            Down,
+        }
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        pub struct Point {
+            pub x: i64,
+            pub y: i64,
+            pub z: f64,
+            pub rotate: Rotate,
+        }
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        pub struct Person {
+            pub name: String,
+            pub middle_name: Option<String>,
+            pub friends: Vec<String>,
+            pub pos: Point,
+            pub age: u64,
+        }
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        pub struct TestStruct {
+            pub key: HashMap<String, String>,
+            pub vec: Vec<Vec<Option<u8>>>,
+        }
+
+        let mut raw_json =
+            r#"{"name":"bob","middle_name": "frank", "friends":[], "pos": [-1, 2, -3.25, "up"], "age": 123}"#.to_string();
+        let value =
+            crate::to_borrowed_value(unsafe { raw_json.as_bytes_mut() }).expect("to_owned_value");
+        let result: Person = super::super::from_refvalue(&value).expect("from_refvalue");
+        let expected = Person {
+            name: "bob".to_string(),
+            middle_name: Some("frank".to_string()),
+            friends: Vec::new(),
+            pos: Point {
+                x: -1,
+                y: 2,
+                z: -3.25_f64,
+                rotate: Rotate::Up,
+            },
+            age: 123,
+        };
+        assert_eq!(result, expected);
+
+        let mut raw_json = r#"{"key":{"subkey": "value"}, "vec":[[null], [1]]}"#.to_string();
+        let value =
+            crate::to_borrowed_value(unsafe { raw_json.as_bytes_mut() }).expect("to_owned_value");
+        let result: TestStruct = super::super::from_refvalue(&value).expect("from_refvalue");
+        let expected = TestStruct {
+            key: hashmap!("subkey".to_string() => "value".to_string()),
+            vec: vec![vec![None], vec![Some(1)]],
+        };
+        assert_eq!(result, expected);
+    }
+
+    #[cfg(feature = "128bit")]
+    #[test]
+    fn deserialize_128bit() {
+        let value = i64::MIN as i128 - 1;
+        let int128 = crate::BorrowedValue::Static(crate::StaticNode::I128(value));
+        let res: i128 = super::super::from_refvalue(&int128).expect("from_refvalue");
+        assert_eq!(value, res);
+
+        let value = u64::MAX as u128;
+        let int128 = crate::BorrowedValue::Static(crate::StaticNode::U128(value));
+        let res: u128 = super::super::from_refvalue(&int128).expect("from_refvalue");
+        assert_eq!(value, res);
     }
 }

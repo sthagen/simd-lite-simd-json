@@ -1,9 +1,9 @@
 name: Tests - Nightly
 
-on: [push, pull_request]
+on: [push]
 
 jobs:
-  build:
+  build-nightly:
     strategy:
       matrix:
         os:

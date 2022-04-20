@@ -1,4 +1,4 @@
-# SIMD Json for Rust &emsp; [![Build Status]][simd-json.rs] [![Build Status ARM]][drone.io] [![Quality]][simd-json.rs]  [![Latest Version]][crates.io] [![Code Coverage]][codecov.io]
+# SIMD Json for Rust &emsp; [![Build Status]][simd-json.rs] [![Build Status ARM]][drone.io] [![Quality]][simd-json.rs]  [![Latest Version]][crates.io] [![Code Coverage]][coveralls]
 
 [Build Status ARM]: https://cloud.drone.io/api/badges/simd-lite/simd-json/status.svg
 [drone.io]: https://cloud.drone.io/simd-lite/simd-json
@@ -7,8 +7,8 @@
 [simd-json.rs]: https://simd-json.rs
 [Latest Version]: https://img.shields.io/crates/v/simd-json.svg
 [crates.io]: https://crates.io/crates/simd-json
-[Code Coverage]: https://codecov.io/gh/simd-lite/simd-json/badge.svg
-[codecov.io]: https://codecov.io/gh/simd-lite/simd-json
+[Code Coverage]: https://coveralls.io/repos/github/simd-lite/simd-json/badge.svg?branch=main
+[coveralls]: https://coveralls.io/github/simd-lite/simd-json?branch=main
 
 **Rust port of extremely fast [simdjson](https://github.com/lemire/simdjson) JSON parser with [serde][1] compatibility.**
 
@@ -65,7 +65,7 @@ There are a few reasons for this:
 `simd-json` goes through extra scrutiny for unsafe code. These steps are:
 
 * Unit tests - to test 'the obvious' cases, edge cases, and regression cases
-* Structural constructive property based testing - We generate random valid JSON objects to exercise the full `simd-json` codebase stochastically. Floats are currently excluded since slighty different parsing algorihtms lead to slighty different results here. In short "is simd-json correct".
+* Structural constructive property based testing - We generate random valid JSON objects to exercise the full `simd-json` codebase stochastically. Floats are currently excluded since slighty different parsing algorithms lead to slighty different results here. In short "is simd-json correct".
 * Data-oriented property based testing of string-like data - to assert that sequences of legal printable characters don't panic or crash the parser (they might and often error so - they are not valid json!)
 * Destructive Property based testing - make sure that no illegal byte sequences crash the parser in any way
 * Fuzzing (using American Fuzzy Lop - afl) - fuzz based on upstream simd pass/fail cases

@@ -52,7 +52,7 @@ pub fn to_value(s: &mut [u8]) -> Result<Value> {
 /// Parses a slice of bytes into a Value dom. This function will
 /// rewrite the slice to de-escape strings.
 /// We do not keep any references to the raw data but re-allocate
-/// owned memory whereever required thus returning a value without
+/// owned memory wherever required thus returning a value without
 /// a lifetime.
 ///
 /// # Errors
@@ -315,14 +315,14 @@ impl<'de> OwnedDeserializer<'de> {
 
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     fn parse_array(&mut self, len: usize) -> Value {
-        // Rust doens't optimize the normal loop away here
-        // so we write our own avoiding the lenght
+        // Rust doesn't optimize the normal loop away here
+        // so we write our own avoiding the length
         // checks during push
         let mut res = Vec::with_capacity(len);
         unsafe {
             res.set_len(len);
             for i in 0..len {
-                std::ptr::write(res.get_unchecked_mut(i), self.parse())
+                std::ptr::write(res.get_unchecked_mut(i), self.parse());
             }
         }
         Value::Array(res)
@@ -338,7 +338,7 @@ impl<'de> OwnedDeserializer<'de> {
                 // does not move the cursor forward
                 res.insert_nocheck(key.into(), self.parse());
             } else {
-                unreachable!()
+                unreachable!();
             }
         }
         Value::from(res)
@@ -777,7 +777,7 @@ mod test {
 
     #[test]
     fn default() {
-        assert_eq!(Value::default(), Value::null())
+        assert_eq!(Value::default(), Value::null());
     }
 
     use proptest::prelude::*;
@@ -803,7 +803,7 @@ mod test {
                 prop_oneof![
                     // Take the inner strategy and make the two recursive cases.
                     prop::collection::vec(inner.clone(), 0..10).prop_map(Value::Array),
-                    prop::collection::hash_map(".*", inner.clone(), 0..10)
+                    prop::collection::hash_map(".*", inner, 0..10)
                         .prop_map(|m| m.into_iter().collect()),
                 ]
             },
@@ -828,13 +828,13 @@ mod test {
             let mut string = owned.encode();
             let mut bytes = unsafe{ string.as_bytes_mut()};
             let decoded = to_value(&mut bytes).expect("Failed to decode");
-            prop_assert_eq!(owned, decoded)
+            prop_assert_eq!(owned, decoded);
         }
         #[test]
         #[allow(clippy::float_cmp)]
         fn prop_f64_cmp(f in proptest::num::f64::NORMAL) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
 
         }
 
@@ -842,50 +842,50 @@ mod test {
         #[allow(clippy::float_cmp)]
         fn prop_f32_cmp(f in proptest::num::f32::NORMAL) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
 
         }
         #[test]
         fn prop_i64_cmp(f in proptest::num::i64::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
         #[test]
         fn prop_i32_cmp(f in proptest::num::i32::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
         #[test]
         fn prop_i16_cmp(f in proptest::num::i16::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
         #[test]
         fn prop_i8_cmp(f in proptest::num::i8::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
         #[test]
         fn prop_u64_cmp(f in proptest::num::u64::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
 
         #[test]
         #[allow(clippy::cast_possible_truncation)]
         fn prop_usize_cmp(f in proptest::num::usize::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
          #[test]
         fn prop_u32_cmp(f in proptest::num::u32::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
         #[test]
         fn prop_u16_cmp(f in proptest::num::u16::ANY) {
             let v: Value = f.into();
-            prop_assert_eq!(v, f)
+            prop_assert_eq!(v, f);
         }
         #[test]
         fn prop_u8_cmp(f in proptest::num::u8::ANY) {
@@ -904,9 +904,10 @@ mod test {
     #[test]
     fn test_union_cmp() {
         let v: Value = ().into();
-        assert_eq!(v, ())
+        assert_eq!(v, ());
     }
     #[test]
+    #[allow(clippy::bool_assert_comparison)]
     fn test_bool_cmp() {
         let v: Value = true.into();
         assert_eq!(v, true);
@@ -927,7 +928,7 @@ mod test {
             v,
             vec![("a", 1)]
                 .iter()
-                .cloned()
+                .copied()
                 .collect::<std::collections::HashMap<&str, i32>>()
         );
     }

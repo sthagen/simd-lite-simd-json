@@ -718,7 +718,6 @@ where
     where
         T: serde_ext::Serialize,
     {
-        dbg!();
         iomap!(self
             .write(b"{")
             .and_then(|_| self.write_simple_string(variant))
@@ -801,7 +800,6 @@ where
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        dbg!();
         iomap!(self
             .write(b"{")
             .and_then(|_| self.write_simple_string(variant))
@@ -826,7 +824,7 @@ mod test {
     use proptest::prelude::*;
 
     #[test]
-    fn prety_print_serde() {
+    fn pretty_print_serde() {
         #[derive(Clone, Debug, PartialEq, serde::Serialize)]
         enum Segment {
             Id { mid: usize },
@@ -834,7 +832,7 @@ mod test {
 
         assert_eq!(
             "{\n  \"Id\": {\n    \"mid\": 0\n  }\n}",
-            crate::to_string_pretty(&Segment::Id { mid: 0 }).unwrap()
+            crate::to_string_pretty(&Segment::Id { mid: 0 }).expect("to_string_pretty")
         );
     }
 
@@ -847,7 +845,7 @@ mod test {
 
         assert_eq!(
             "{\"Id\":{\"mid\":0}}",
-            crate::to_string(&Segment::Id { mid: 0 }).unwrap()
+            crate::to_string(&Segment::Id { mid: 0 }).expect("to_string")
         );
     }
 
@@ -866,7 +864,10 @@ mod test {
 
         foo.bar.insert(1337, 1337);
 
-        assert_eq!(r#"{"bar":{"1337":1337}}"#, crate::to_string(&foo).unwrap());
+        assert_eq!(
+            r#"{"bar":{"1337":1337}}"#,
+            crate::to_string(&foo).expect("to_string")
+        );
     }
 
     #[cfg(not(feature = "128bit"))]
@@ -875,7 +876,13 @@ mod test {
             Just(Value::Static(StaticNode::Null)),
             any::<bool>().prop_map(Value::from),
             //(-1.0e306f64..1.0e306f64).prop_map(Value::from), // damn you float!
+            any::<i8>().prop_map(Value::from),
+            any::<i16>().prop_map(Value::from),
+            any::<i32>().prop_map(Value::from),
             any::<i64>().prop_map(Value::from),
+            any::<u8>().prop_map(Value::from),
+            any::<u16>().prop_map(Value::from),
+            any::<u32>().prop_map(Value::from),
             any::<u64>().prop_map(Value::from),
             ".*".prop_map(Value::from),
         ];
@@ -900,9 +907,15 @@ mod test {
             Just(Value::Static(StaticNode::Null)),
             any::<bool>().prop_map(Value::from),
             //(-1.0e306f64..1.0e306f64).prop_map(Value::from), // damn you float!
+            any::<i8>().prop_map(Value::from),
+            any::<i16>().prop_map(Value::from),
+            any::<i32>().prop_map(Value::from),
             any::<i64>().prop_map(Value::from),
-            any::<u64>().prop_map(Value::from),
             any::<i128>().prop_map(Value::from),
+            any::<u8>().prop_map(Value::from),
+            any::<u16>().prop_map(Value::from),
+            any::<u32>().prop_map(Value::from),
+            any::<u64>().prop_map(Value::from),
             any::<u128>().prop_map(Value::from),
             ".*".prop_map(Value::from),
         ];
@@ -932,7 +945,7 @@ mod test {
 
         #[test]
         fn prop_json_encode_decode(val in arb_json_value()) {
-            let mut encoded = crate::to_vec(&val).unwrap();
+            let mut encoded = crate::to_vec(&val).expect("to_vec");
             println!("{}", String::from_utf8_lossy(&encoded.clone()));
             let res: Value = crate::from_slice(encoded.as_mut_slice()).expect("can't convert");
             assert_eq!(val, res);

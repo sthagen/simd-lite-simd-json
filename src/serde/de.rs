@@ -14,7 +14,7 @@ where
     // deserialize as. Not all data formats are able to support this operation.
     // Formats that support `deserialize_any` are known as self-describing.
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
-    fn deserialize_any<V>(mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -29,8 +29,8 @@ where
             Node::Static(StaticNode::U64(n)) => visitor.visit_u64(n),
             #[cfg(feature = "128bit")]
             Node::Static(StaticNode::U128(n)) => visitor.visit_u128(n),
-            Node::Array(len, _) => visitor.visit_seq(CommaSeparated::new(&mut self, len as usize)),
-            Node::Object(len, _) => visitor.visit_map(CommaSeparated::new(&mut self, len as usize)),
+            Node::Array(len, _) => visitor.visit_seq(CommaSeparated::new(self, len as usize)),
+            Node::Object(len, _) => visitor.visit_map(CommaSeparated::new(self, len as usize)),
         }
     }
 
@@ -229,14 +229,14 @@ where
     // passing the visitor an "Access" object that gives it the ability to
     // iterate through the data contained in the sequence.
     #[cfg_attr(not(feature = "no-inline"), inline)]
-    fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         // Parse the opening bracket of the sequence.
         if let Ok(Node::Array(len, _)) = self.next() {
             // Give the visitor access to each element of the sequence.
-            visitor.visit_seq(CommaSeparated::new(&mut self, len as usize))
+            visitor.visit_seq(CommaSeparated::new(self, len as usize))
         } else {
             Err(Deserializer::error(ErrorType::ExpectedArray))
         }
@@ -292,14 +292,14 @@ where
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
-    fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         // Parse the opening bracket of the sequence.
         if let Ok(Node::Object(len, _)) = self.next() {
             // Give the visitor access to each element of the sequence.
-            visitor.visit_map(CommaSeparated::new(&mut self, len as usize))
+            visitor.visit_map(CommaSeparated::new(self, len as usize))
         } else {
             Err(Deserializer::error(ErrorType::ExpectedMap))
         }
@@ -307,7 +307,7 @@ where
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
     fn deserialize_struct<V>(
-        mut self,
+        self,
         _name: &'static str,
         _fields: &'static [&'static str],
         visitor: V,
@@ -317,19 +317,15 @@ where
     {
         match self.next() {
             // Give the visitor access to each element of the sequence.
-            Ok(Node::Object(len, _)) => {
-                visitor.visit_map(CommaSeparated::new(&mut self, len as usize))
-            }
-            Ok(Node::Array(len, _)) => {
-                visitor.visit_seq(CommaSeparated::new(&mut self, len as usize))
-            }
+            Ok(Node::Object(len, _)) => visitor.visit_map(CommaSeparated::new(self, len as usize)),
+            Ok(Node::Array(len, _)) => visitor.visit_seq(CommaSeparated::new(self, len as usize)),
             _ => Err(Deserializer::error(ErrorType::ExpectedMap)),
         }
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
     fn deserialize_enum<V>(
-        mut self,
+        self,
         _name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
@@ -341,7 +337,7 @@ where
         match self.next() {
             Ok(Node::Object(len, _)) => {
                 // Give the visitor access to each element of the sequence.
-                visitor.visit_map(CommaSeparated::new(&mut self, len as usize))
+                visitor.visit_map(CommaSeparated::new(self, len as usize))
             }
             Ok(Node::String(s)) => visitor.visit_enum(s.into_deserializer()),
             _ => Err(Deserializer::error(ErrorType::ExpectedMap)),
@@ -406,7 +402,7 @@ impl<'de, 'a> MapAccess<'de> for CommaSeparated<'a, 'de> {
             Ok(None)
         } else {
             self.len -= 1;
-            seed.deserialize(&mut *self.de).map(Some)
+            seed.deserialize(MapKey { de: &mut *self.de }).map(Some)
         }
     }
 
@@ -422,5 +418,107 @@ impl<'de, 'a> MapAccess<'de> for CommaSeparated<'a, 'de> {
     #[cfg_attr(not(feature = "no-inline"), inline)]
     fn size_hint(&self) -> Option<usize> {
         Some(self.len)
+    }
+}
+
+// `MapKey` is provided to the `Visitor` to give it the ability to parse integers
+// from string as JSON keys are always string
+struct MapKey<'de: 'a, 'a> {
+    de: &'a mut Deserializer<'de>,
+}
+
+macro_rules! deserialize_integer_key {
+    ($method:ident => $visit:ident; $type:ty) => {
+        fn $method<V>(self, visitor: V) -> Result<V::Value>
+        where
+            V: de::Visitor<'de>,
+        {
+            visitor.$visit(stry!(match unsafe { self.de.next_() } {
+                Node::String(s) => s
+                    .parse::<$type>()
+                    .map_err(|_| Deserializer::error(ErrorType::InvalidNumber)),
+                _ => Err(Deserializer::error(ErrorType::ExpectedString)),
+            }))
+        }
+    };
+}
+
+impl<'de, 'a> de::Deserializer<'de> for MapKey<'de, 'a> {
+    type Error = Error;
+
+    #[inline]
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match stry!(self.de.next()) {
+            Node::String(s) => visitor.visit_borrowed_str(s),
+            _ => Err(Deserializer::error(ErrorType::ExpectedString)),
+        }
+    }
+
+    deserialize_integer_key!(deserialize_i8 => visit_i8; i8);
+    deserialize_integer_key!(deserialize_i16 => visit_i16; i16);
+    deserialize_integer_key!(deserialize_i32 => visit_i32; i32);
+    deserialize_integer_key!(deserialize_i64 => visit_i64; i64);
+    deserialize_integer_key!(deserialize_u8 => visit_u8; u8);
+    deserialize_integer_key!(deserialize_u16 => visit_u16; u16);
+    deserialize_integer_key!(deserialize_u32 => visit_u32; u32);
+    deserialize_integer_key!(deserialize_u64 => visit_u64; u64);
+
+    #[cfg(feature = "128bit")]
+    deserialize_integer_key!(deserialize_i128 => visit_i128; i128);
+    #[cfg(feature = "128bit")]
+    deserialize_integer_key!(deserialize_u128 => visit_u128; u128);
+
+    #[inline]
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        // Map keys cannot be null.
+        visitor.visit_some(self)
+    }
+
+    #[inline]
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        visitor.visit_newtype_struct(self)
+    }
+
+    #[inline]
+    fn deserialize_enum<V>(
+        self,
+        name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        self.de.deserialize_enum(name, variants, visitor)
+    }
+
+    #[inline]
+    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        self.de.deserialize_bytes(visitor)
+    }
+
+    #[inline]
+    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        self.de.deserialize_bytes(visitor)
+    }
+
+    forward_to_deserialize_any! {
+        bool f32 f64 char str string unit unit_struct seq tuple tuple_struct map
+        struct identifier ignored_any
     }
 }
