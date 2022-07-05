@@ -1,6 +1,5 @@
 #![deny(warnings)]
 #![cfg_attr(feature = "hints", feature(core_intrinsics))]
-#![deny(warnings)]
 #![warn(unused_extern_crates)]
 #![deny(
     clippy::all,
@@ -9,7 +8,12 @@
     clippy::pedantic
 )]
 // We might want to revisit inline_always
-#![allow(clippy::module_name_repetitions, clippy::inline_always)]
+#![allow(
+    clippy::module_name_repetitions,
+    clippy::inline_always,
+    clippy::trait_duplication_in_bounds,
+    clippy::type_repetition_in_bounds
+)]
 #![deny(missing_docs)]
 
 //! simd-json is a rust port of the simdjson c++ library. It follows
@@ -138,7 +142,10 @@ mod charutils;
 mod macros;
 mod error;
 mod numberparse;
+mod safer_unchecked;
 mod stringparse;
+
+use safer_unchecked::GetSaferUnchecked;
 
 /// Reexport of Cow
 pub mod cow;
@@ -476,16 +483,16 @@ impl<'de> Deserializer<'de> {
         }
 
         unsafe {
-            input_buffer
-                .as_mut_slice()
-                .get_unchecked_mut(..len)
-                .clone_from_slice(input);
-            *(input_buffer.get_unchecked_mut(len)) = 0;
-            input_buffer.set_len(len);
+            std::ptr::copy_nonoverlapping(input.as_ptr(), input_buffer.as_mut_ptr(), len);
+
+            let to_fill = input_buffer.capacity() - len;
+            std::ptr::write_bytes(input_buffer.as_mut_ptr().add(len), 0, to_fill);
+
+            input_buffer.set_len(input_buffer.capacity());
         };
 
         let s1_result: std::result::Result<Vec<u32>, ErrorType> =
-            unsafe { Self::find_structural_bits(input_buffer) };
+            unsafe { Self::find_structural_bits(input) };
 
         let structural_indexes = match s1_result {
             Ok(i) => i,
@@ -516,7 +523,7 @@ impl<'de> Deserializer<'de> {
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     pub unsafe fn next_(&mut self) -> Node<'de> {
         self.idx += 1;
-        *self.tape.get_unchecked(self.idx)
+        *self.tape.get_kinda_unchecked(self.idx)
     }
 
     //#[inline(never)]
@@ -566,7 +573,7 @@ impl<'de> Deserializer<'de> {
               __builtin_prefetch(buf + idx + 128);
             #endif
              */
-            let chunk = input.get_unchecked(idx..idx + 64);
+            let chunk = input.get_kinda_unchecked(idx..idx + 64);
             utf8_validator.update_from_chunks(chunk);
 
             let input = SimdInput::new(chunk);
@@ -714,14 +721,15 @@ impl AlignedBuf {
         }
     }
 
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.inner.as_ptr()
+    }
+
     fn capacity_overflow() -> ! {
         panic!("capacity overflow");
     }
     fn capacity(&self) -> usize {
         self.capacity
-    }
-    fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.inner.as_ptr(), self.len) }
     }
     unsafe fn set_len(&mut self, n: usize) {
         assert!(

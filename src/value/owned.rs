@@ -24,6 +24,7 @@ mod from;
 mod serialize;
 
 use crate::prelude::*;
+use crate::safer_unchecked::GetSaferUnchecked;
 use crate::{AlignedBuf, Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
 use std::fmt;
@@ -323,7 +324,7 @@ impl<'de> OwnedDeserializer<'de> {
         unsafe {
             res.set_len(len);
             for i in 0..len {
-                std::ptr::write(res.get_unchecked_mut(i), self.parse());
+                std::ptr::write(res.get_kinda_unchecked_mut(i), self.parse());
             }
         }
         Value::Array(res)
