@@ -1782,6 +1782,30 @@ mod tests_serde {
         .boxed()
     }
 
+    #[cfg(feature = "serde_impl")]
+    #[test]
+    fn enum_test() {
+        use serde::{Deserialize, Serialize};
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+        struct MyStruct {
+            field: u8,
+        }
+
+        #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+        enum MyEnum {
+            First(MyStruct),
+            Second(u8),
+        }
+
+        let thing = MyEnum::First(MyStruct { field: 1 });
+        let mut ser = crate::serde::to_string(&thing).unwrap();
+        println!("Ser {:?}", ser);
+        let des: MyEnum = unsafe { crate::serde::from_str(&mut ser).unwrap() };
+        println!("Des {:?}", des);
+        assert_eq!(thing, des);
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     proptest! {
         #![proptest_config(ProptestConfig {

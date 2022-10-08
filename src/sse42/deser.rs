@@ -1,9 +1,10 @@
 #[cfg(target_arch = "x86")]
-use std::arch::x86::{
-    __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_set1_epi8, _mm_storeu_si128,
-};
+use std::arch::x86 as arch;
+
 #[cfg(target_arch = "x86_64")]
-use std::arch::x86_64::{
+use std::arch::x86_64 as arch;
+
+use arch::{
     __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_set1_epi8, _mm_storeu_si128,
 };
 
@@ -44,9 +45,8 @@ impl<'de> Deserializer<'de> {
         let mut src_i: usize = 0;
         let mut len = src_i;
         loop {
-            let v: __m128i = unsafe {
-                _mm_loadu_si128(src.as_ptr().add(src_i).cast::<std::arch::x86_64::__m128i>())
-            };
+            let v: __m128i =
+                unsafe { _mm_loadu_si128(src.as_ptr().add(src_i).cast::<arch::__m128i>()) };
 
             // store to dest unconditionally - we can overwrite the bits we don't like
             // later
@@ -98,18 +98,11 @@ impl<'de> Deserializer<'de> {
 
         // To be more conform with upstream
         loop {
-            let v: __m128i = unsafe {
-                _mm_loadu_si128(src.as_ptr().add(src_i).cast::<std::arch::x86_64::__m128i>())
-            };
+            let v: __m128i =
+                unsafe { _mm_loadu_si128(src.as_ptr().add(src_i).cast::<arch::__m128i>()) };
 
             unsafe {
-                _mm_storeu_si128(
-                    buffer
-                        .as_mut_ptr()
-                        .add(dst_i)
-                        .cast::<std::arch::x86_64::__m128i>(),
-                    v,
-                );
+                _mm_storeu_si128(buffer.as_mut_ptr().add(dst_i).cast::<arch::__m128i>(), v);
             };
 
             // store to dest unconditionally - we can overwrite the bits we don't like
