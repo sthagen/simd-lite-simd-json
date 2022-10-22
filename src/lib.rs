@@ -954,7 +954,7 @@ mod tests {
         fn prop_json_encode_decode(val in arb_json_value()) {
             let mut encoded: Vec<u8> = Vec::new();
             val.write(&mut encoded).expect("write");
-            println!("{}", String::from_utf8_lossy(&encoded.clone()));
+            println!("{}", String::from_utf8_lossy(&encoded));
             let mut e = encoded.clone();
             let res = to_owned_value(&mut e).expect("can't convert");
             assert_eq!(val, res);
@@ -967,7 +967,7 @@ mod tests {
                 let mut e = encoded.clone();
                 let res: OwnedValue = deserialize(&mut e).expect("can't convert");
                 assert_eq!(val, res);
-                let mut e = encoded.clone();
+                let mut e = encoded;
                 let res: BorrowedValue = deserialize(&mut e).expect("can't convert");
                 assert_eq!(val, res);
             }
@@ -1494,6 +1494,16 @@ mod tests_serde {
         assert_eq!(v_simd, v_serde);
     }
 
+    #[cfg(not(feature = "approx-number-parsing"))]
+    #[test]
+    fn float3() {
+        let mut d = String::from("0.6");
+        let mut d = unsafe { d.as_bytes_mut() };
+        let v_serde: serde_json::Number = serde_json::from_slice(d).expect("serde_json");
+        let v_simd: serde_json::Number = from_slice(&mut d).expect("simd_json");
+        assert_eq!(v_simd, v_serde);
+    }
+
     #[test]
     fn map0() {
         let mut d = String::from(r#"{"snot": "badger"}"#);
@@ -1780,6 +1790,22 @@ mod tests_serde {
         )
         .prop_map(|v| serde_json::to_string(&v).expect(""))
         .boxed()
+    }
+
+    #[cfg(feature = "serde_impl")]
+    #[test]
+    fn int_map_key() {
+        use std::collections::BTreeMap;
+
+        let mut map = BTreeMap::new();
+        map.insert(0, "foo");
+        map.insert(1, "bar");
+        map.insert(2, "baz");
+
+        assert_eq!(
+            r#"{"0":"foo","1":"bar","2":"baz"}"#,
+            crate::to_string(&map).unwrap()
+        );
     }
 
     #[cfg(feature = "serde_impl")]

@@ -387,11 +387,7 @@ impl<'de> Deserializer<'de> {
                 fail!(ErrorType::TrailingCharacters);
             }
             b'-' => {
-                insert_res!(Node::Static(s2try!(Self::parse_number_int(
-                    idx,
-                    get!(input2, idx..),
-                    true
-                ))));
+                insert_res!(Node::Static(s2try!(Self::parse_number(idx, input2, true))));
 
                 if i == structural_indexes.len() {
                     success!();
@@ -399,11 +395,7 @@ impl<'de> Deserializer<'de> {
                 fail!(ErrorType::TrailingCharacters);
             }
             b'0'..=b'9' => {
-                insert_res!(Node::Static(s2try!(Self::parse_number_int(
-                    idx,
-                    get!(input2, idx..),
-                    false
-                ))));
+                insert_res!(Node::Static(s2try!(Self::parse_number(idx, input2, false))));
 
                 if i == structural_indexes.len() {
                     success!();
@@ -452,19 +444,17 @@ impl<'de> Deserializer<'de> {
                             object_continue!();
                         }
                         b'-' => {
-                            insert_res!(Node::Static(s2try!(Self::parse_number_int(
-                                idx,
-                                get!(input2, idx..),
-                                true
+                            insert_res!(Node::Static(s2try!(Self::parse_number(
+                                idx, input2, true
                             ))));
+
                             object_continue!();
                         }
                         b'0'..=b'9' => {
-                            insert_res!(Node::Static(s2try!(Self::parse_number_int(
-                                idx,
-                                get!(input2, idx..),
-                                false
+                            insert_res!(Node::Static(s2try!(Self::parse_number(
+                                idx, input2, false
                             ))));
+
                             object_continue!();
                         }
                         b'{' => {
@@ -560,19 +550,17 @@ impl<'de> Deserializer<'de> {
                             array_continue!();
                         }
                         b'-' => {
-                            insert_res!(Node::Static(s2try!(Self::parse_number_int(
-                                idx,
-                                get!(input2, idx..),
-                                true
+                            insert_res!(Node::Static(s2try!(Self::parse_number(
+                                idx, input2, true
                             ))));
+
                             array_continue!();
                         }
                         b'0'..=b'9' => {
-                            insert_res!(Node::Static(s2try!(Self::parse_number_int(
-                                idx,
-                                get!(input2, idx..),
-                                false
+                            insert_res!(Node::Static(s2try!(Self::parse_number(
+                                idx, input2, false
                             ))));
+
                             array_continue!();
                         }
                         b'{' => {
