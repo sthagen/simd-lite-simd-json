@@ -425,7 +425,10 @@ impl<'de> BorrowDeserializer<'de> {
         // element so we eat this
         for _ in 0..len {
             if let Node::String(key) = unsafe { self.0.next_() } {
+                #[cfg(not(feature = "value-no-dup-keys"))]
                 res.insert_nocheck(key.into(), self.parse());
+                #[cfg(feature = "value-no-dup-keys")]
+                res.insert(key.into(), self.parse());
             } else {
                 unreachable!();
             }
@@ -932,8 +935,8 @@ mod test {
         #[test]
         fn prop_serialize_deserialize(borrowed in arb_value()) {
             let mut string = borrowed.encode();
-            let mut bytes = unsafe{ string.as_bytes_mut()};
-            let decoded = to_value(&mut bytes).expect("Failed to decode");
+            let bytes = unsafe{ string.as_bytes_mut()};
+            let decoded = to_value(bytes).expect("Failed to decode");
             prop_assert_eq!(borrowed, decoded);
         }
         #[test]

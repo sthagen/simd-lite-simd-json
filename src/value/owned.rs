@@ -362,9 +362,10 @@ impl<'de> OwnedDeserializer<'de> {
 
         for _ in 0..len {
             if let Node::String(key) = unsafe { self.de.next_() } {
-                // We have to call parse short str twice since parse_short_str
-                // does not move the cursor forward
+                #[cfg(not(feature = "value-no-dup-keys"))]
                 res.insert_nocheck(key.into(), self.parse());
+                #[cfg(feature = "value-no-dup-keys")]
+                res.insert(key.into(), self.parse());
             } else {
                 unreachable!();
             }
@@ -857,8 +858,8 @@ mod test {
         #[test]
         fn prop_serialize_deserialize(owned in arb_value()) {
             let mut string = owned.encode();
-            let mut bytes = unsafe{ string.as_bytes_mut()};
-            let decoded = to_value(&mut bytes).expect("Failed to decode");
+            let bytes = unsafe{ string.as_bytes_mut()};
+            let decoded = to_value(bytes).expect("Failed to decode");
             prop_assert_eq!(owned, decoded);
         }
         #[test]
