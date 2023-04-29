@@ -1,6 +1,6 @@
 [package]
 name = "simd-json"
-version = "0.8.0"
+version = "0.9.1"
 authors = ["Heinz N. Gies <heinz@licenser.net>", "Sunny Gleason"]
 edition = "2021"
 exclude = ["data/*", "fuzz/*"]
@@ -14,8 +14,8 @@ rust-version = "1.61"
 [dependencies]
 lexical-core = { version = "0.8", features = ["format"] }
 beef = { version = "0.5", optional = true }
-halfbrown = "0.1"
-value-trait = { version = "0.5.1" }
+halfbrown = "0.2"
+value-trait = { version = "0.6" }
 simdutf8 = { version = "0.1.4", features = ["public_imp", "aarch64_neon"] }
 
 # serde compatibilty
