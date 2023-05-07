@@ -225,7 +225,8 @@ use simdutf8::basic::imp::x86::sse42::ChunkedUtf8ValidatorImp;
         target_feature = "simd128"
     ))
 ))]
-fn please_compile_with_a_simd_compatible_cpu_setting_read_the_simdjsonrs_readme() -> ! {}
+const _: () =
+    compile_error!("Please compile with a simd compatible cpu setting, read the simdjson README.");
 
 mod stage2;
 /// simd-json JSON-DOM value
@@ -486,8 +487,8 @@ impl<'de> Deserializer<'de> {
         unsafe {
             std::ptr::copy_nonoverlapping(input.as_ptr(), input_buffer.as_mut_ptr(), len);
 
-            let to_fill = input_buffer.capacity() - len;
-            std::ptr::write_bytes(input_buffer.as_mut_ptr().add(len), 0, to_fill);
+            // ensure we have a 0 to terminate the buffer
+            std::ptr::write(input_buffer.as_mut_ptr().add(len), 0);
 
             input_buffer.set_len(input_buffer.capacity());
         };
