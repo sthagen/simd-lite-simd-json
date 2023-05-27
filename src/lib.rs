@@ -5,16 +5,15 @@
     clippy::all,
     clippy::unwrap_used,
     clippy::unnecessary_unwrap,
-    clippy::pedantic
+    clippy::pedantic,
+    missing_docs
 )]
 // We might want to revisit inline_always
 #![allow(
     clippy::module_name_repetitions,
     clippy::inline_always,
-    clippy::trait_duplication_in_bounds,
-    clippy::type_repetition_in_bounds
+    renamed_and_removed_lints
 )]
-#![deny(missing_docs)]
 
 //! simd-json is a rust port of the simdjson c++ library. It follows
 //! most of the design closely with a few exceptions to make it better
@@ -794,7 +793,7 @@ mod tests {
     fn test_send_sync() {
         struct TestStruct<T: Sync + Send>(T);
         #[allow(clippy::let_underscore_drop)] // test
-        let _ = TestStruct(super::AlignedBuf::with_capacity(0));
+        let _: TestStruct<_> = TestStruct(super::AlignedBuf::with_capacity(0));
     }
 
     #[test]
@@ -1351,7 +1350,7 @@ mod tests_serde {
         assert_eq!(
             to_value(d1),
             Ok(Value::Array(vec![
-                Value::from(Object::new()),
+                Value::from(Object::default()),
                 Value::Static(StaticNode::Null)
             ]))
         );
@@ -1518,7 +1517,7 @@ mod tests_serde {
         let v_serde: serde_json::Value = serde_json::from_slice(d).expect("");
         let v_simd: serde_json::Value = from_slice(d).expect("");
         assert_eq!(v_simd, v_serde);
-        let mut h = Object::new();
+        let mut h = Object::default();
         h.insert("snot".into(), Value::from("badger"));
         assert_eq!(to_value(d1), Ok(Value::from(h)));
     }
@@ -1532,7 +1531,7 @@ mod tests_serde {
         let v_serde: serde_json::Value = serde_json::from_slice(d).expect("");
         let v_simd: serde_json::Value = from_slice(d).expect("");
         assert_eq!(v_simd, v_serde);
-        let mut h = Object::new();
+        let mut h = Object::default();
         h.insert("snot".into(), Value::from("badger"));
         h.insert("badger".into(), Value::from("snot"));
         assert_eq!(to_value(d1), Ok(Value::from(h)));
