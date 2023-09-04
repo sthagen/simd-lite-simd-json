@@ -154,7 +154,7 @@ mod avx2;
 #[cfg(target_feature = "avx2")]
 pub use crate::avx2::deser::*;
 #[cfg(target_feature = "avx2")]
-use crate::avx2::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
+pub(crate) use crate::avx2::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
 #[cfg(target_feature = "avx2")]
 use simdutf8::basic::imp::x86::avx2::ChunkedUtf8ValidatorImp;
 
@@ -163,7 +163,7 @@ mod sse42;
 #[cfg(all(target_feature = "sse4.2", not(target_feature = "avx2")))]
 pub use crate::sse42::deser::*;
 #[cfg(all(target_feature = "sse4.2", not(target_feature = "avx2")))]
-use crate::sse42::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
+pub(crate) use crate::sse42::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
 #[cfg(all(target_feature = "sse4.2", not(target_feature = "avx2")))]
 use simdutf8::basic::imp::x86::sse42::ChunkedUtf8ValidatorImp;
 
@@ -172,7 +172,7 @@ mod neon;
 #[cfg(target_feature = "neon")]
 pub use crate::neon::deser::*;
 #[cfg(target_feature = "neon")]
-use crate::neon::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
+pub(crate) use crate::neon::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
 #[cfg(target_feature = "neon")]
 use simdutf8::basic::imp::aarch64::neon::ChunkedUtf8ValidatorImp;
 
@@ -181,7 +181,7 @@ mod simd128;
 #[cfg(target_feature = "simd128")]
 pub use crate::simd128::deser::*;
 #[cfg(target_feature = "simd128")]
-use crate::simd128::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
+pub(crate) use crate::simd128::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
 #[cfg(target_feature = "simd128")]
 use simdutf8::basic::imp::wasm32::simd128::ChunkedUtf8ValidatorImp;
 
@@ -206,7 +206,7 @@ pub use crate::sse42::deser::*;
     target_feature = "neon",
     target_feature = "simd128"
 )))]
-use crate::sse42::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
+pub(crate) use crate::sse42::stage1::{SimdInput, SIMDINPUT_LENGTH, SIMDJSON_PADDING};
 #[cfg(not(any(
     target_feature = "sse4.2",
     target_feature = "avx2",
@@ -840,6 +840,17 @@ mod tests {
         let simd = Deserializer::from_slice(d).expect("");
         assert_eq!(simd.tape[1], Node::Array(3, 5));
         assert_eq!(simd.tape[2], Node::Array(0, 3));
+    }
+
+    #[test]
+    fn string_array() {
+        const STR: &str = r#""{\"arg\":\"test\"}""#;
+        let mut d = String::from(STR);
+        let d = unsafe { d.as_bytes_mut() };
+        let simd = Deserializer::from_slice(d).expect("");
+        dbg!(&simd.tape);
+        // assert_eq!(simd.tape[1], Node::Array(1, 3));
+        assert_eq!(simd.tape[1], Node::String("{\"arg\":\"test\"}"));
     }
 
     #[cfg(feature = "128bit")]
