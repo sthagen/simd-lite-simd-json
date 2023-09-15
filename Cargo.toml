@@ -1,6 +1,6 @@
 [package]
 name = "simd-json"
-version = "0.10.6"
+version = "0.10.7"
 authors = ["Heinz N. Gies <heinz@licenser.net>", "Sunny Gleason"]
 edition = "2021"
 exclude = ["data/*", "fuzz/*"]
@@ -13,6 +13,9 @@ rust-version = "1.61"
 
 [package.metadata.docs.rs]
 features = ["docsrs"]
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
 
 [dependencies]
 lexical-core = { version = "0.8", features = ["format"] }
@@ -100,6 +103,9 @@ hints = [] # requires nightly
 
 # for perf testing, used by the example
 perf = ["perfcnt", "getopts", "colored", "serde_json"]
+
+# for documentation
+docsrs = []
 
 [[example]]
 name = "perf"
