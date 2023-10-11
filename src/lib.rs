@@ -148,7 +148,7 @@ use safer_unchecked::GetSaferUnchecked;
 /// Reexport of Cow
 pub mod cow;
 
-/// The maximum padding size required by and SIMD implementation
+/// The maximum padding size required by any SIMD implementation
 pub const SIMDJSON_PADDING: usize = 32; // take upper limit mem::size_of::<__m256i>()
 /// It's 64 for all (Is this correct?)
 pub const SIMDINPUT_LENGTH: usize = 64;
@@ -206,6 +206,33 @@ use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 
 use simdutf8::basic::imp::ChunkedUtf8Validator;
+
+/// A struct to hold the buffers for the parser.
+pub struct Buffers {
+    string_buffer: Vec<u8>,
+    structural_indexes: Vec<u32>,
+    input_buffer: AlignedBuf,
+}
+
+impl Default for Buffers {
+    #[inline]
+    fn default() -> Self {
+        Self::new(128)
+    }
+}
+impl Buffers {
+    /// Create new buffer for input length.
+    /// If this is too small a new buffer will be allocated, if needed during parsing.
+    #[inline]
+    #[must_use]
+    pub fn new(input_len: usize) -> Self {
+        Self {
+            string_buffer: Vec::with_capacity(input_len + SIMDJSON_PADDING),
+            structural_indexes: Vec::default(),
+            input_buffer: AlignedBuf::with_capacity(input_len + SIMDJSON_PADDING * 2),
+        }
+    }
+}
 
 /// Creates a tape from the input for later consumption
 /// # Errors
@@ -441,54 +468,34 @@ impl<'de> Deserializer<'de> {
     /// # Errors
     ///
     /// Will return `Err` if `s` is invalid JSON.
-    #[allow(clippy::uninit_vec)]
     pub fn from_slice(input: &'de mut [u8]) -> Result<Self> {
         let len = input.len();
 
-        let mut string_buffer: Vec<u8> = Vec::with_capacity(len + SIMDJSON_PADDING);
+        let mut buffer = Buffers::new(len);
+
+        Self::from_slice_with_buffers(input, &mut buffer)
+    }
+
+    /// Creates a serializer from a mutable slice of bytes using a temporary
+    /// buffer for strings for them to be copied in and out if needed
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if `s` is invalid JSON.
+    #[allow(clippy::uninit_vec)]
+    pub fn from_slice_with_buffers(input: &'de mut [u8], buffer: &mut Buffers) -> Result<Self> {
+        let len = input.len();
+
+        buffer.string_buffer.clear();
+        buffer.string_buffer.reserve(len + SIMDJSON_PADDING);
         unsafe {
-            string_buffer.set_len(len + SIMDJSON_PADDING);
+            buffer.string_buffer.set_len(len + SIMDJSON_PADDING);
         };
-
-        Self::from_slice_with_buffer(input, &mut string_buffer)
-    }
-
-    /// Creates a serializer from a mutable slice of bytes using a temporary
-    /// buffer for strings for them to be copied in and out if needed
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if `s` is invalid JSON.
-    pub fn from_slice_with_buffer(input: &'de mut [u8], string_buffer: &mut [u8]) -> Result<Self> {
-        // We have to pick an initial size of the structural indexes.
-        // 6 is a heuristic that seems to work well for the benchmark
-        // data and limit re-allocation frequency.
-
-        let len = input.len();
-
-        // let buf_start: usize = input.as_ptr() as *const () as usize;
-        // let needs_relocation = (buf_start + input.len()) % page_size::get() < SIMDJSON_PADDING;
-        let mut buffer = AlignedBuf::with_capacity(len + SIMDJSON_PADDING * 2);
-
-        Self::from_slice_with_buffers(input, &mut buffer, string_buffer)
-    }
-
-    /// Creates a serializer from a mutable slice of bytes using a temporary
-    /// buffer for strings for them to be copied in and out if needed
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if `s` is invalid JSON.
-    pub fn from_slice_with_buffers(
-        input: &'de mut [u8],
-        input_buffer: &mut AlignedBuf,
-        string_buffer: &mut [u8],
-    ) -> Result<Self> {
-        let len = input.len();
 
         if len > std::u32::MAX as usize {
             return Err(Self::error(ErrorType::InputTooLarge));
         }
+        let input_buffer = &mut buffer.input_buffer;
 
         if input_buffer.capacity() < len + SIMDJSON_PADDING * 2 {
             *input_buffer = AlignedBuf::with_capacity(len + SIMDJSON_PADDING * 2);
@@ -507,18 +514,17 @@ impl<'de> Deserializer<'de> {
             input_buffer.set_len(input_buffer.capacity());
         };
 
-        let s1_result: std::result::Result<Vec<u32>, ErrorType> =
-            unsafe { Self::find_structural_bits(input) };
-
-        let structural_indexes = match s1_result {
-            Ok(i) => i,
-            Err(t) => {
-                return Err(Error::generic(t));
-            }
+        unsafe {
+            Self::find_structural_bits(input, &mut buffer.structural_indexes)
+                .map_err(Error::generic)?;
         };
 
-        let tape: Vec<Node> =
-            Self::build_tape(input, input_buffer, string_buffer, &structural_indexes)?;
+        let tape: Vec<Node> = Self::build_tape(
+            input,
+            input_buffer,
+            &mut buffer.string_buffer,
+            &buffer.structural_indexes,
+        )?;
 
         Ok(Self { tape, idx: 0 })
     }
@@ -547,18 +553,19 @@ impl<'de> Deserializer<'de> {
     #[cfg(not(any(feature = "avx2", feature = "sse42")))]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
-    ) -> std::result::Result<Vec<u32>, ErrorType> {
+        structural_indexes: &mut Vec<u32>,
+    ) -> std::result::Result<(), ErrorType> {
         #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
         {
             let cell = std::cell::OnceCell::new();
             let avx_support: &bool = cell.get_or_init(|| std::is_x86_feature_detected!("avx2"));
             if *avx_support {
-                return Self::find_structural_bits_avx(input);
+                return Self::find_structural_bits_avx(input, structural_indexes);
             }
             let cell = std::cell::OnceCell::new();
             let sse_support: &bool = cell.get_or_init(|| std::is_x86_feature_detected!("sse4.2"));
             if *sse_support {
-                return Self::find_structural_bits_sse(input);
+                return Self::find_structural_bits_sse(input, structural_indexes);
             }
             panic!("Please run on a simd compatible cpu, read the simdjson README.");
         }
@@ -566,6 +573,7 @@ impl<'de> Deserializer<'de> {
         {
             return Self::_find_structural_bits::<_, SimdInputNEON, ChunkedUtf8ValidatorImpNEON>(
                 input,
+                structural_indexes,
             );
         }
 
@@ -573,6 +581,7 @@ impl<'de> Deserializer<'de> {
         {
             return Self::_find_structural_bits::<_, SimdInput128, ChunkedUtf8ValidatorImpSIMD128>(
                 input,
+                structural_indexes,
             );
         }
     }
@@ -582,8 +591,12 @@ impl<'de> Deserializer<'de> {
     #[target_feature(enable = "avx2")]
     pub(crate) unsafe fn find_structural_bits_avx(
         input: &[u8],
-    ) -> std::result::Result<Vec<u32>, ErrorType> {
-        Self::_find_structural_bits::<_, SimdInputAVX, ChunkedUtf8ValidatorImpAVX2>(input)
+        structural_indexes: &mut Vec<u32>,
+    ) -> std::result::Result<(), ErrorType> {
+        Self::_find_structural_bits::<_, SimdInputAVX, ChunkedUtf8ValidatorImpAVX2>(
+            input,
+            structural_indexes,
+        )
     }
 
     #[inline]
@@ -591,8 +604,12 @@ impl<'de> Deserializer<'de> {
     #[target_feature(enable = "sse4.2")]
     pub(crate) unsafe fn find_structural_bits_sse(
         input: &[u8],
-    ) -> std::result::Result<Vec<u32>, ErrorType> {
-        Self::_find_structural_bits::<_, SimdInputSSE, ChunkedUtf8ValidatorImpSSE42>(input)
+        structural_indexes: &mut Vec<u32>,
+    ) -> std::result::Result<(), ErrorType> {
+        Self::_find_structural_bits::<_, SimdInputSSE, ChunkedUtf8ValidatorImpSSE42>(
+            input,
+            structural_indexes,
+        )
     }
 
     #[allow(clippy::cast_possible_truncation)]
@@ -600,19 +617,25 @@ impl<'de> Deserializer<'de> {
     #[cfg(feature = "avx2")]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
-    ) -> std::result::Result<Vec<u32>, ErrorType> {
-        Self::_find_structural_bits::<_, SimdInputAVX, ChunkedUtf8ValidatorImpAVX2>(input)
+        structural_indexes: &mut Vec<u32>,
+    ) -> std::result::Result<(), ErrorType> {
+        Self::_find_structural_bits::<_, SimdInputAVX, ChunkedUtf8ValidatorImpAVX2>(
+            input,
+            structural_indexes,
+        )
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline(always))]
     #[allow(clippy::cast_possible_truncation)]
     pub(crate) unsafe fn _find_structural_bits<K, S: Stage1Parse<K>, C: ChunkedUtf8Validator>(
         input: &[u8],
-    ) -> std::result::Result<Vec<u32>, ErrorType> {
+        structural_indexes: &mut Vec<u32>,
+    ) -> std::result::Result<(), ErrorType> {
         let len = input.len();
         // 6 is a heuristic number to estimate it turns out a rate of 1/6 structural characters
         // leads almost never to relocations.
-        let mut structural_indexes = Vec::with_capacity(len / 6);
+        structural_indexes.clear();
+        structural_indexes.reserve(len / 6);
         structural_indexes.push(0); // push extra root element
 
         let mut utf8_validator = C::new();
@@ -672,7 +695,7 @@ impl<'de> Deserializer<'de> {
             // take the previous iterations structural bits, not our current iteration,
             // and flatten
             #[allow(clippy::cast_possible_truncation)]
-            S::flatten_bits(&mut structural_indexes, idx as u32, structurals);
+            S::flatten_bits(structural_indexes, idx as u32, structurals);
 
             let mut whitespace: u64 = 0;
             input.find_whitespace_and_structurals(&mut whitespace, &mut structurals);
@@ -716,7 +739,7 @@ impl<'de> Deserializer<'de> {
 
             // take the previous iterations structural bits, not our current iteration,
             // and flatten
-            S::flatten_bits(&mut structural_indexes, idx as u32, structurals);
+            S::flatten_bits(structural_indexes, idx as u32, structurals);
 
             let mut whitespace: u64 = 0;
             input.find_whitespace_and_structurals(&mut whitespace, &mut structurals);
@@ -736,7 +759,7 @@ impl<'de> Deserializer<'de> {
             return Err(ErrorType::Syntax);
         }
         // finally, flatten out the remaining structurals from the last iteration
-        S::flatten_bits(&mut structural_indexes, idx as u32, structurals);
+        S::flatten_bits(structural_indexes, idx as u32, structurals);
 
         // a valid JSON file cannot have zero structural indexes - we should have
         // found something (note that we compare to 1 as we always add the root!)
@@ -755,13 +778,13 @@ impl<'de> Deserializer<'de> {
         if utf8_validator.finalize(None).is_err() {
             Err(ErrorType::InvalidUtf8)
         } else {
-            Ok(structural_indexes)
+            Ok(())
         }
     }
 }
 
 /// SIMD aligned buffer
-pub struct AlignedBuf {
+struct AlignedBuf {
     layout: Layout,
     capacity: usize,
     len: usize,

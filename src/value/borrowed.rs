@@ -26,9 +26,9 @@ mod serialize;
 
 use super::ObjectHasher;
 use crate::cow::Cow;
-use crate::prelude::*;
 use crate::safer_unchecked::GetSaferUnchecked;
-use crate::{AlignedBuf, Deserializer, Node, Result, StaticNode};
+use crate::{prelude::*, Buffers};
+use crate::{Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
 use std::fmt;
 use std::ops::{Index, IndexMut};
@@ -62,10 +62,9 @@ pub fn to_value(s: &mut [u8]) -> Result<Value> {
 /// Will return `Err` if `s` is invalid JSON.
 pub fn to_value_with_buffers<'value>(
     s: &'value mut [u8],
-    input_buffer: &mut AlignedBuf,
-    string_buffer: &mut [u8],
+    buffers: &mut Buffers,
 ) -> Result<Value<'value>> {
-    match Deserializer::from_slice_with_buffers(s, input_buffer, string_buffer) {
+    match Deserializer::from_slice_with_buffers(s, buffers) {
         Ok(de) => Ok(BorrowDeserializer::from_deserializer(de).parse()),
         Err(e) => Err(e),
     }
