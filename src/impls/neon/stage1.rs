@@ -7,7 +7,7 @@ use std::arch::aarch64::{
 use std::mem;
 
 // NEON-SPECIFIC
-#[cfg_attr(not(feature = "no-inline"), inline(always))]
+#[cfg_attr(not(feature = "no-inline"), inline)]
 pub(crate) unsafe fn bit_mask() -> uint8x16_t {
     std::mem::transmute([
         0x01u8, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40,
@@ -15,7 +15,7 @@ pub(crate) unsafe fn bit_mask() -> uint8x16_t {
     ])
 }
 
-#[cfg_attr(not(feature = "no-inline"), inline(always))]
+#[cfg_attr(not(feature = "no-inline"), inline)]
 pub unsafe fn neon_movemask_bulk(
     p0: uint8x16_t,
     p1: uint8x16_t,
@@ -42,16 +42,17 @@ pub unsafe fn neon_movemask_bulk(
 //pub const SIMDINPUT_LENGTH: usize = 64;
 
 #[derive(Debug)]
-pub(crate) struct SimdInputNEON {
+pub(crate) struct SimdInput {
     v0: uint8x16_t,
     v1: uint8x16_t,
     v2: uint8x16_t,
     v3: uint8x16_t,
 }
 
-impl Stage1Parse<int8x16_t> for SimdInputNEON {
+impl Stage1Parse for SimdInput {
+    type Utf8Validator = simdutf8::basic::imp::aarch64::neon::ChunkedUtf8ValidatorImp;
+    type SimdRepresentation = int8x16_t;
     #[cfg_attr(not(feature = "no-inline"), inline)]
-    #[allow(clippy::cast_ptr_alignment)]
     unsafe fn new(ptr: &[u8]) -> Self {
         Self {
             v0: vld1q_u8(ptr.as_ptr().cast::<u8>()),
@@ -61,7 +62,7 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
         }
     }
 
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     unsafe fn compute_quote_mask(mut quote_bits: u64) -> u64 {
         quote_bits ^= quote_bits << 1;
         quote_bits ^= quote_bits << 2;
@@ -73,7 +74,7 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
     }
 
     /// a straightforward comparison of a mask against input
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     unsafe fn cmp_mask_against_input(&self, m: u8) -> u64 {
         let mask: uint8x16_t = vmovq_n_u8(m);
         let cmp_res_0: uint8x16_t = vceqq_u8(self.v0, mask);
@@ -85,7 +86,7 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
     }
 
     // find all values less than or equal than the content of maxval (using unsigned arithmetic)
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     unsafe fn unsigned_lteq_against_input(&self, maxval: int8x16_t) -> u64 {
         let maxval = vreinterpretq_u8_s8(maxval);
         let cmp_res_0: uint8x16_t = vcleq_u8(self.v0, maxval);
@@ -95,7 +96,7 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
         neon_movemask_bulk(cmp_res_0, cmp_res_1, cmp_res_2, cmp_res_3)
     }
 
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[allow(clippy::cast_sign_loss)]
     unsafe fn find_whitespace_and_structurals(&self, whitespace: &mut u64, structurals: &mut u64) {
         // do a 'shufti' to detect structural JSON characters
@@ -115,11 +116,10 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
         // * carriage return 0x0d
         // these go into the next 2 buckets of the comparison (8/16)
 
-        // TODO: const?
-        let low_nibble_mask: uint8x16_t =
+        const low_nibble_mask: uint8x16_t =
             std::mem::transmute([16u8, 0, 0, 0, 0, 0, 0, 0, 0, 8, 12, 1, 2, 9, 0, 0]);
-        // TODO: const?
-        let high_nibble_mask: uint8x16_t =
+
+        const high_nibble_mask: uint8x16_t =
             std::mem::transmute([8u8, 0, 18, 4, 0, 1, 0, 1, 0, 0, 0, 3, 2, 1, 0, 0]);
 
         let structural_shufti_mask: uint8x16_t = vmovq_n_u8(0x7);
@@ -169,12 +169,8 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
     // will potentially store extra values beyond end of valid bits, so base_ptr
     // needs to be large enough to handle this
     //TODO: usize was u32 here does this matter?
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
-    #[allow(
-        clippy::cast_possible_wrap,
-        clippy::cast_ptr_alignment,
-        clippy::uninit_vec
-    )]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_ptr_alignment)]
     unsafe fn flatten_bits(base: &mut Vec<u32>, idx: u32, mut bits: u64) {
         let cnt: usize = bits.count_ones() as usize;
         let mut l = base.len();
@@ -192,7 +188,7 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
         // We later indiscriminatory writre over the len we set but that's OK
         // since we ensure we reserve the needed space
         base.reserve(64);
-        base.set_len(l + cnt);
+        let final_len = l + cnt;
 
         while bits != 0 {
             let v0 = bits.trailing_zeros() as i32;
@@ -209,14 +205,16 @@ impl Stage1Parse<int8x16_t> for SimdInputNEON {
             std::ptr::write(base.as_mut_ptr().add(l).cast::<int32x4_t>(), v);
             l += 4;
         }
+        // We have written all the data
+        base.set_len(final_len);
     }
 
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     unsafe fn fill_s8(n: i8) -> int8x16_t {
         vdupq_n_s8(n)
     }
 
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     unsafe fn zero() -> int8x16_t {
         vdupq_n_s8(0)
     }

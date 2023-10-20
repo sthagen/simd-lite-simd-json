@@ -13,7 +13,7 @@ where
     // Look at the input data to decide what Serde data model type to
     // deserialize as. Not all data formats are able to support this operation.
     // Formats that support `deserialize_any` are known as self-describing.
-    #[cfg_attr(not(feature = "no-inline"), inline(always))]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -335,7 +335,7 @@ where
     {
         // Parse the opening bracket of the sequence.
         match self.next() {
-            Ok(Node::Object { len, count: _ }) if len == 1 => {
+            Ok(Node::Object { len: 1, .. }) => {
                 // Give the visitor access to each element of the sequence.
                 // let value = ri!(visitor.visit_enum(VariantAccess::new(self)));
                 visitor.visit_enum(VariantAccess::new(self))

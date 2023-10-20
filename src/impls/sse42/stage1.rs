@@ -19,8 +19,6 @@ use arch::{
     _mm_shuffle_epi8, _mm_srli_epi32, _mm_storeu_si128,
 };
 
-use std::mem;
-
 macro_rules! low_nibble_mask {
     () => {
         _mm_setr_epi8(16, 0, 0, 0, 0, 0, 0, 0, 0, 8, 12, 1, 2, 9, 0, 0)
@@ -34,14 +32,16 @@ macro_rules! high_nibble_mask {
 }
 
 #[derive(Debug)]
-pub(crate) struct SimdInputSSE {
+pub(crate) struct SimdInput {
     v0: __m128i,
     v1: __m128i,
     v2: __m128i,
     v3: __m128i,
 }
 
-impl Stage1Parse<__m128i> for SimdInputSSE {
+impl Stage1Parse for SimdInput {
+    type Utf8Validator = simdutf8::basic::imp::x86::sse42::ChunkedUtf8ValidatorImp;
+    type SimdRepresentation = __m128i;
     #[target_feature(enable = "sse4.2")]
     #[cfg_attr(not(feature = "no-inline"), inline)]
     #[allow(clippy::cast_ptr_alignment)]
@@ -232,11 +232,7 @@ impl Stage1Parse<__m128i> for SimdInputSSE {
     //TODO: usize was u32 here does this matter?
     #[target_feature(enable = "sse4.2")]
     #[cfg_attr(not(feature = "no-inline"), inline)]
-    #[allow(
-        clippy::cast_possible_wrap,
-        clippy::cast_ptr_alignment,
-        clippy::uninit_vec
-    )]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_ptr_alignment)]
     unsafe fn flatten_bits(base: &mut Vec<u32>, idx: u32, mut bits: u64) {
         let cnt: usize = bits.count_ones() as usize;
         let mut l = base.len();
@@ -254,7 +250,7 @@ impl Stage1Parse<__m128i> for SimdInputSSE {
         // We later indiscriminatory writre over the len we set but that's OK
         // since we ensure we reserve the needed space
         base.reserve(64);
-        base.set_len(l + cnt);
+        let final_len = l + cnt;
 
         while bits != 0 {
             let v0 = bits.trailing_zeros() as i32;
@@ -271,6 +267,8 @@ impl Stage1Parse<__m128i> for SimdInputSSE {
             _mm_storeu_si128(base.as_mut_ptr().add(l).cast::<arch::__m128i>(), v);
             l += 4;
         }
+        // We have written all the data
+        base.set_len(final_len);
     }
 
     #[target_feature(enable = "sse4.2")]

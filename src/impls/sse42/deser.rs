@@ -4,34 +4,27 @@ use std::arch::x86 as arch;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64 as arch;
 
+use crate::{
+    error::ErrorType,
+    safer_unchecked::GetSaferUnchecked,
+    stringparse::{handle_unicode_codepoint, ESCAPE_MAP},
+    Deserializer, Result, SillyWrapper,
+};
 use arch::{
     __m128i, _mm_cmpeq_epi8, _mm_loadu_si128, _mm_movemask_epi8, _mm_set1_epi8, _mm_storeu_si128,
 };
 
-use std::mem;
-
-pub use crate::error::{Error, ErrorType};
-use crate::safer_unchecked::GetSaferUnchecked;
-use crate::stringparse::{handle_unicode_codepoint, ESCAPE_MAP};
-use crate::Deserializer;
-pub use crate::Result;
-
 #[target_feature(enable = "sse4.2")]
-#[allow(
-    clippy::if_not_else,
-    clippy::transmute_ptr_to_ptr,
-    clippy::cast_ptr_alignment,
-    clippy::cast_possible_wrap,
-    clippy::too_many_lines
-)]
+#[allow(clippy::if_not_else, clippy::cast_possible_wrap)]
 #[cfg_attr(not(feature = "no-inline"), inline)]
-pub(crate) unsafe fn parse_str_sse<'invoke, 'de>(
-    input: *mut u8,
+pub(crate) unsafe fn parse_str<'invoke, 'de>(
+    input: SillyWrapper<'de>,
     data: &'invoke [u8],
     buffer: &'invoke mut [u8],
     mut idx: usize,
 ) -> Result<&'de str> {
     use ErrorType::{InvalidEscape, InvalidUnicodeCodepoint};
+    let input = input.input;
     // Add 1 to skip the initial "
     idx += 1;
 
@@ -43,6 +36,8 @@ pub(crate) unsafe fn parse_str_sse<'invoke, 'de>(
     let mut src_i: usize = 0;
     let mut len = src_i;
     loop {
+        // _mm_loadu_si128 does not require alignmnet
+        #[allow(clippy::cast_ptr_alignment)]
         let v: __m128i =
             unsafe { _mm_loadu_si128(src.as_ptr().add(src_i).cast::<arch::__m128i>()) };
 
@@ -94,8 +89,12 @@ pub(crate) unsafe fn parse_str_sse<'invoke, 'de>(
 
     // To be more conform with upstream
     loop {
+        // _mm_loadu_si128 does not require alignmnet
+        #[allow(clippy::cast_ptr_alignment)]
         let v: __m128i = _mm_loadu_si128(src.as_ptr().add(src_i).cast::<arch::__m128i>());
 
+        // _mm_storeu_si128 does not require alignmnet
+        #[allow(clippy::cast_ptr_alignment)]
         _mm_storeu_si128(buffer.as_mut_ptr().add(dst_i).cast::<arch::__m128i>(), v);
 
         // store to dest unconditionally - we can overwrite the bits we don't like
