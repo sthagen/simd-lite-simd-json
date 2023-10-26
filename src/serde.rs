@@ -11,7 +11,7 @@ mod se;
 mod value;
 pub use self::se::*;
 pub use self::value::*;
-use crate::{stry, Deserializer, Error, ErrorType, Result};
+use crate::{stry, Buffers, Deserializer, Error, ErrorType, Result};
 use crate::{BorrowedValue, OwnedValue};
 use crate::{Node, StaticNode};
 use serde::de::DeserializeOwned;
@@ -62,9 +62,56 @@ where
     let mut deserializer = stry!(Deserializer::from_slice(s));
     T::deserialize(&mut deserializer)
 }
-/// parses a str  using a serde deserializer.
+
+/// Parses a byte slice using a serde deserializer.
+/// note that the slice will be rewritten in the process.
+///
+/// Passes in reusable buffers to reduce allocations
+///
+/// # Errors
+///
+/// Will return `Err` if `s` is invalid JSON.
+#[cfg_attr(not(feature = "no-inline"), inline)]
+pub fn from_slice_with_buffers<'a, T>(s: &'a mut [u8], buffers: &mut Buffers) -> Result<T>
+where
+    T: Deserialize<'a>,
+{
+    let mut deserializer = stry!(Deserializer::from_slice_with_buffers(s, buffers));
+    T::deserialize(&mut deserializer)
+}
+
+/// Parses a str using a serde deserializer.
 /// note that the slice will be rewritten in the process and
 /// might not remain a valid utf8 string in its entirety.
+///
+/// It is recommended to use `from_slice` instead.
+///
+/// # Errors
+///
+/// Will return `Err` if `s` is invalid JSON.
+///
+/// # Safety
+///
+/// This function mutates the string passed into it, it's a convenience wrapper around `from_slice`,
+/// holding the same guarantees as `str::as_bytes_mut` in that after the call &str might include
+/// invalid utf8 bytes.
+#[cfg_attr(not(feature = "no-inline"), inline)]
+pub unsafe fn from_str<'a, T>(s: &'a mut str) -> Result<T>
+where
+    T: Deserialize<'a>,
+{
+    let mut deserializer = stry!(Deserializer::from_slice(s.as_bytes_mut()));
+
+    T::deserialize(&mut deserializer)
+}
+
+/// Parses a str using a serde deserializer.
+/// note that the slice will be rewritten in the process and
+/// might not remain a valid utf8 string in its entirety.
+///
+/// It is recommended to use `from_slice_with_buffers` instead.
+///
+/// Passes in reusable buffers to reduce allocations.
 ///
 /// # Errors
 ///
@@ -76,11 +123,14 @@ where
 /// holding the same guarantees as `str::as_bytes_mut` in that after the call &str might include
 /// invalid utf8 bytes.
 #[cfg_attr(not(feature = "no-inline"), inline)]
-pub unsafe fn from_str<'a, T>(s: &'a mut str) -> Result<T>
+pub unsafe fn from_str_with_buffers<'a, T>(s: &'a mut str, buffers: &mut Buffers) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = stry!(Deserializer::from_slice(s.as_bytes_mut()));
+    let mut deserializer = stry!(Deserializer::from_slice_with_buffers(
+        s.as_bytes_mut(),
+        buffers
+    ));
 
     T::deserialize(&mut deserializer)
 }
@@ -105,6 +155,28 @@ where
     T::deserialize(&mut deserializer)
 }
 
+/// Parses a Reader using a serde deserializer.
+///
+/// Passes in reusable buffers to reduce allocations.
+///
+/// # Errors
+///
+/// Will return `Err` if an IO error is encountered while reading
+/// rdr or if the readers content is invalid JSON.
+#[cfg_attr(not(feature = "no-inline"), inline)]
+pub fn from_reader_with_buffers<R, T>(mut rdr: R, buffers: &mut Buffers) -> Result<T>
+where
+    R: io::Read,
+    T: DeserializeOwned,
+{
+    let mut data = Vec::new();
+    if let Err(e) = rdr.read_to_end(&mut data) {
+        return Err(Error::generic(ErrorType::Io(e)));
+    };
+    let mut deserializer = stry!(Deserializer::from_slice_with_buffers(&mut data, buffers));
+    T::deserialize(&mut deserializer)
+}
+
 impl serde::de::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Self::generic(ErrorType::Serde(msg.to_string()))
@@ -121,17 +193,19 @@ impl serde_ext::ser::Error for Error {
 impl<'de> Deserializer<'de> {
     #[cfg_attr(not(feature = "no-inline"), inline)]
     fn next(&mut self) -> Result<Node<'de>> {
-        self.idx += 1;
-        self.tape
+        let r = self
+            .tape
             .get(self.idx)
             .copied()
-            .ok_or_else(|| Self::error(ErrorType::Syntax))
+            .ok_or_else(|| Self::error(ErrorType::Syntax));
+        self.idx += 1;
+        r
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
     fn peek(&self) -> Result<Node> {
         self.tape
-            .get(self.idx + 1)
+            .get(self.idx)
             .copied()
             .ok_or_else(|| Self::error(ErrorType::Eof))
     }
@@ -711,6 +785,7 @@ mod test {
         });
         let input: Vec<Option<u8>> = vec![None, Some(3_u8)];
         let mut v_str = crate::to_string(&input).unwrap();
+        dbg!(&v_str);
         assert_eq!(input, unsafe {
             crate::from_str::<Vec<Option<u8>>>(&mut v_str).unwrap()
         });

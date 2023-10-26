@@ -31,7 +31,6 @@ use crate::{Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
 use std::fmt;
 use std::ops::{Index, IndexMut};
-use value_trait::{ValueAccess, ValueInto};
 
 /// Representation of a JSON object
 pub type Object<'value> = HashMap<Cow<'value, str>, Value<'value>, ObjectHasher>;
@@ -56,7 +55,9 @@ pub fn to_value(s: &mut [u8]) -> Result<Value> {
 /// As we reference parts of the input slice the resulting dom
 /// has the same lifetime as the slice it was created from.
 ///
-/// # Errors
+/// Passes in reusable buffers to reduce allocations.
+///
+///  # Errors
 ///
 /// Will return `Err` if `s` is invalid JSON.
 pub fn to_value_with_buffers<'value>(
@@ -84,6 +85,13 @@ pub enum Value<'value> {
 }
 
 impl<'value> Value<'value> {
+    fn as_static(&self) -> Option<StaticNode> {
+        match self {
+            Self::Static(s) => Some(*s),
+            _ => None,
+        }
+    }
+
     /// Enforces static lifetime on a borrowed value, this will
     /// force all strings to become owned COW's, the same applies for
     /// Object keys.
@@ -146,7 +154,7 @@ impl<'value> Value<'value> {
     }
 }
 
-impl<'value> Builder<'value> for Value<'value> {
+impl<'value> ValueBuilder<'value> for Value<'value> {
     #[inline]
     #[must_use]
     fn null() -> Self {
@@ -167,7 +175,9 @@ impl<'value> Builder<'value> for Value<'value> {
     }
 }
 
-impl<'value> Mutable for Value<'value> {
+impl<'value> ValueAsMutContainer for Value<'value> {
+    type Array = Vec<Self>;
+    type Object = Object<'value>;
     #[inline]
     #[must_use]
     fn as_array_mut(&mut self) -> Option<&mut Vec<Value<'value>>> {
@@ -180,6 +190,7 @@ impl<'value> Mutable for Value<'value> {
     ///
     /// ```rust
     /// use simd_json::*;
+    /// use value_trait::prelude::*;
     ///
     /// let mut object: BorrowedValue = json!({
     ///   "answer": 23,
@@ -203,20 +214,7 @@ impl<'value> Mutable for Value<'value> {
     }
 }
 
-impl<'value> ValueTrait for Value<'value> {
-    #[inline]
-    #[must_use]
-    fn is_null(&self) -> bool {
-        matches!(self, Self::Static(StaticNode::Null))
-    }
-}
-
-impl<'value> ValueAccess for Value<'value> {
-    type Target = Self;
-    type Key = Cow<'value, str>;
-    type Array = Vec<Self>;
-    type Object = Object<'value>;
-
+impl<'value> TypedValue for Value<'value> {
     #[inline]
     #[must_use]
     fn value_type(&self) -> ValueType {
@@ -227,72 +225,54 @@ impl<'value> ValueAccess for Value<'value> {
             Self::Object(_) => ValueType::Object,
         }
     }
+}
+impl<'value> ValueAsScalar for Value<'value> {
+    #[inline]
+    #[must_use]
+    fn as_null(&self) -> Option<()> {
+        self.as_static()?.as_null()
+    }
 
     #[inline]
     #[must_use]
     fn as_bool(&self) -> Option<bool> {
-        match self {
-            Self::Static(StaticNode::Bool(b)) => Some(*b),
-            _ => None,
-        }
+        self.as_static()?.as_bool()
     }
 
     #[inline]
     #[must_use]
     fn as_i64(&self) -> Option<i64> {
-        match self {
-            Self::Static(s) => s.as_i64(),
-            _ => None,
-        }
+        self.as_static()?.as_i64()
     }
 
     #[inline]
     #[must_use]
     fn as_i128(&self) -> Option<i128> {
-        match self {
-            Self::Static(s) => s.as_i128(),
-            _ => None,
-        }
+        self.as_static()?.as_i128()
     }
 
     #[inline]
     #[must_use]
-    #[allow(clippy::cast_sign_loss)]
     fn as_u64(&self) -> Option<u64> {
-        match self {
-            Self::Static(s) => s.as_u64(),
-            _ => None,
-        }
+        self.as_static()?.as_u64()
     }
 
-    #[cfg(feature = "128bit")]
     #[inline]
     #[must_use]
-    #[allow(clippy::cast_sign_loss)]
     fn as_u128(&self) -> Option<u128> {
-        match self {
-            Self::Static(s) => s.as_u128(),
-            _ => None,
-        }
+        self.as_static()?.as_u128()
     }
 
     #[inline]
     #[must_use]
     fn as_f64(&self) -> Option<f64> {
-        match self {
-            Self::Static(s) => s.as_f64(),
-            _ => None,
-        }
+        self.as_static()?.as_f64()
     }
 
     #[inline]
     #[must_use]
-    #[allow(clippy::cast_precision_loss)]
     fn cast_f64(&self) -> Option<f64> {
-        match self {
-            Self::Static(s) => s.cast_f64(),
-            _ => None,
-        }
+        self.as_static()?.cast_f64()
     }
 
     #[inline]
@@ -304,6 +284,10 @@ impl<'value> ValueAccess for Value<'value> {
             _ => None,
         }
     }
+}
+impl<'value> ValueAsContainer for Value<'value> {
+    type Array = Vec<Self>;
+    type Object = Object<'value>;
 
     #[inline]
     #[must_use]
@@ -324,24 +308,29 @@ impl<'value> ValueAccess for Value<'value> {
     }
 }
 
-impl<'value> ValueInto for Value<'value> {
+impl<'value> ValueIntoString for Value<'value> {
     type String = Cow<'value, str>;
 
-    fn into_string(self) -> Option<<Value<'value> as ValueInto>::String> {
+    fn into_string(self) -> Option<<Self as ValueIntoString>::String> {
         match self {
             Self::String(s) => Some(s),
             _ => None,
         }
     }
+}
 
-    fn into_array(self) -> Option<<Value<'value> as ValueAccess>::Array> {
+impl<'value> ValueIntoContainer for Value<'value> {
+    type Array = Vec<Self>;
+    type Object = Object<'value>;
+
+    fn into_array(self) -> Option<<Self as ValueIntoContainer>::Array> {
         match self {
             Self::Array(a) => Some(a),
             _ => None,
         }
     }
 
-    fn into_object(self) -> Option<<Value<'value> as ValueAccess>::Object> {
+    fn into_object(self) -> Option<<Self as ValueIntoContainer>::Object> {
         match self {
             Self::Object(a) => Some(*a),
             _ => None,
@@ -1001,7 +990,6 @@ mod test {
         }
 
         #[test]
-        #[allow(clippy::cast_possible_truncation)]
         fn prop_usize_cmp(f in proptest::num::usize::ANY) {
             let v: Value = f.into();
             prop_assert_eq!(v, f);

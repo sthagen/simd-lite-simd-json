@@ -29,7 +29,6 @@ use crate::{Deserializer, Node, Result, StaticNode};
 use halfbrown::HashMap;
 use std::fmt;
 use std::ops::{Index, IndexMut};
-use value_trait::{ValueAccess, ValueInto};
 
 /// Representation of a JSON object
 pub type Object = HashMap<String, Value, ObjectHasher>;
@@ -55,6 +54,8 @@ pub fn to_value(s: &mut [u8]) -> Result<Value> {
 /// We do not keep any references to the raw data but re-allocate
 /// owned memory wherever required thus returning a value without
 /// a lifetime.
+///
+/// Passes in reusable buffers to reduce allocations.
 ///
 /// # Errors
 ///
@@ -82,7 +83,16 @@ pub enum Value {
     Object(Box<Object>),
 }
 
-impl<'input> Builder<'input> for Value {
+impl Value {
+    fn as_static(&self) -> Option<StaticNode> {
+        match self {
+            Value::Static(s) => Some(*s),
+            _ => None,
+        }
+    }
+}
+
+impl<'input> ValueBuilder<'input> for Value {
     #[inline]
     #[must_use]
     fn null() -> Self {
@@ -103,7 +113,9 @@ impl<'input> Builder<'input> for Value {
     }
 }
 
-impl Mutable for Value {
+impl ValueAsMutContainer for Value {
+    type Array = Vec<Self>;
+    type Object = Object;
     #[inline]
     #[must_use]
     fn as_array_mut(&mut self) -> Option<&mut Vec<Self>> {
@@ -122,20 +134,7 @@ impl Mutable for Value {
     }
 }
 
-impl ValueTrait for Value {
-    #[inline]
-    #[must_use]
-    fn is_null(&self) -> bool {
-        matches!(self, Self::Static(StaticNode::Null))
-    }
-}
-
-impl ValueAccess for Value {
-    type Target = Value;
-    type Key = String;
-    type Array = Vec<Self>;
-    type Object = Object;
-
+impl TypedValue for Value {
     #[inline]
     #[must_use]
     fn value_type(&self) -> ValueType {
@@ -146,72 +145,53 @@ impl ValueAccess for Value {
             Self::Object(_) => ValueType::Object,
         }
     }
-
+}
+impl ValueAsScalar for Value {
+    #[inline]
+    #[must_use]
+    fn as_null(&self) -> Option<()> {
+        self.as_static()?.as_null()
+    }
     #[inline]
     #[must_use]
     fn as_bool(&self) -> Option<bool> {
-        match self {
-            Self::Static(StaticNode::Bool(b)) => Some(*b),
-            _ => None,
-        }
+        self.as_static()?.as_bool()
     }
 
     #[inline]
     #[must_use]
     fn as_i64(&self) -> Option<i64> {
-        match self {
-            Self::Static(s) => s.as_i64(),
-            _ => None,
-        }
+        self.as_static()?.as_i64()
     }
 
     #[inline]
     #[must_use]
     fn as_i128(&self) -> Option<i128> {
-        match self {
-            Self::Static(s) => s.as_i128(),
-            _ => None,
-        }
+        self.as_static()?.as_i128()
     }
 
     #[inline]
     #[must_use]
-    #[allow(clippy::cast_sign_loss)]
     fn as_u64(&self) -> Option<u64> {
-        match self {
-            Self::Static(s) => s.as_u64(),
-            _ => None,
-        }
+        self.as_static()?.as_u64()
     }
 
-    #[cfg(feature = "128bit")]
     #[inline]
     #[must_use]
-    #[allow(clippy::cast_sign_loss)]
     fn as_u128(&self) -> Option<u128> {
-        match self {
-            Self::Static(s) => s.as_u128(),
-            _ => None,
-        }
+        self.as_static()?.as_u128()
     }
 
     #[inline]
     #[must_use]
     fn as_f64(&self) -> Option<f64> {
-        match self {
-            Self::Static(s) => s.as_f64(),
-            _ => None,
-        }
+        self.as_static()?.as_f64()
     }
 
     #[inline]
     #[must_use]
-    #[allow(clippy::cast_precision_loss)]
     fn cast_f64(&self) -> Option<f64> {
-        match self {
-            Self::Static(s) => s.cast_f64(),
-            _ => None,
-        }
+        self.as_static()?.cast_f64()
     }
 
     #[inline]
@@ -222,7 +202,10 @@ impl ValueAccess for Value {
             _ => None,
         }
     }
-
+}
+impl ValueAsContainer for Value {
+    type Array = Vec<Self>;
+    type Object = Object;
     #[inline]
     #[must_use]
     fn as_array(&self) -> Option<&Vec<Self>> {
@@ -242,24 +225,28 @@ impl ValueAccess for Value {
     }
 }
 
-impl ValueInto for Value {
+impl ValueIntoString for Value {
     type String = String;
 
-    fn into_string(self) -> Option<<Value as ValueInto>::String> {
+    fn into_string(self) -> Option<<Value as ValueIntoString>::String> {
         match self {
             Self::String(s) => Some(s),
             _ => None,
         }
     }
+}
+impl ValueIntoContainer for Value {
+    type Array = Vec<Self>;
+    type Object = Object;
 
-    fn into_array(self) -> Option<<Value as ValueAccess>::Array> {
+    fn into_array(self) -> Option<<Value as ValueIntoContainer>::Array> {
         match self {
             Self::Array(a) => Some(a),
             _ => None,
         }
     }
 
-    fn into_object(self) -> Option<<Value as ValueAccess>::Object> {
+    fn into_object(self) -> Option<<Value as ValueIntoContainer>::Object> {
         match self {
             Self::Object(a) => Some(*a),
             _ => None,
@@ -903,7 +890,6 @@ mod test {
         }
 
         #[test]
-        #[allow(clippy::cast_possible_truncation)]
         fn prop_usize_cmp(f in proptest::num::usize::ANY) {
             let v: Value = f.into();
             prop_assert_eq!(v, f);

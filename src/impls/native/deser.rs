@@ -77,7 +77,7 @@ pub(crate) unsafe fn parse_str<'invoke, 'de>(
                         InvalidUnicodeCodepoint,
                     ));
                 }
-                // We have to substract one since we're already moving to the next character at the end of the loop
+                // We have to subtract one since we're already moving to the next character at the end of the loop
                 src_i += src_offset - 1;
             } else {
                 let escape_result: u8 = *ESCAPE_MAP.get_kinda_unchecked(escape_char as usize);
@@ -118,7 +118,6 @@ mod test {
         let r = unsafe {
             super::parse_str(input.as_mut_ptr().into(), &input2, buffer.as_mut_slice(), 0)?
         };
-        dbg!(r);
         Ok(String::from(r))
     }
     use super::*;

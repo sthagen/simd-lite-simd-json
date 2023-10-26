@@ -1,8 +1,31 @@
 /// A tape of a parsed json, all values are extracted and validated and
 /// can be used without further computation.
 use value_trait::StaticNode;
+
+mod array;
+mod cmp;
+mod object;
+mod trait_impls;
+#[derive(Debug)]
 /// `Tape`
-pub struct Tape<'input>(Vec<Node<'input>>);
+pub struct Tape<'input>(pub Vec<Node<'input>>);
+pub use array::Array;
+pub use object::Object;
+impl<'input> Tape<'input> {
+    /// FIXME: add docs
+    #[must_use]
+    pub fn as_value(&self) -> Value<'_, 'input> {
+        // Skip initial zero
+        Value(&self.0)
+    }
+}
+
+/// Wrapper around the tape that allows interaction via a `Value`-like API.
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct Value<'tape, 'input>(&'tape [Node<'input>])
+where
+    'input: 'tape;
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 /// Tape `Node`
@@ -31,6 +54,39 @@ pub enum Node<'input> {
     /// A static value that is interned into the tape, it can
     /// be directly taken and isn't nested.
     Static(StaticNode),
+}
+
+impl<'input> Node<'input> {
+    fn as_str(&self) -> Option<&'input str> {
+        if let Node::String(s) = self {
+            Some(*s)
+        } else {
+            None
+        }
+    }
+
+    // returns the count of elements in this node (n for nested, 1 for the rest)
+    fn count(&self) -> usize {
+        match self {
+            // We add 1 as we need to include the header itself
+            Node::Object { count, .. } | Node::Array { count, .. } => *count + 1,
+            _ => 1,
+        }
+    }
+    //     // Returns the lenght of nested elements
+    //     fn as_len(&self) -> Option<usize> {
+    //         match self {
+    //             Node::Object { len, .. } | Node::Array { len, .. } => Some(*len),
+    //             _ => None,
+    //         }
+    //     }
+
+    // fn as_len_and_count(&self) -> Option<(usize, usize)> {
+    //     match self {
+    //         Node::Object { len, count } | Node::Array { len, count } => Some((*len, *count)),
+    //         _ => None,
+    //     }
+    // }
 }
 
 #[cfg(test)]
@@ -68,18 +124,6 @@ mod test {
     fn mut_array_index() {
         let mut v = StaticNode::Null;
         v[0] = ();
-    }
-
-    #[test]
-    fn conversion_obj() {
-        let v = StaticNode::Null;
-        assert!(!v.is_object());
-    }
-
-    #[test]
-    fn conversion_arr() {
-        let v = StaticNode::Null;
-        assert!(!v.is_array());
     }
 
     #[test]

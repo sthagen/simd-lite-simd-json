@@ -9,7 +9,7 @@ use ahash::{AHasher, RandomState};
 use once_cell::sync::OnceCell;
 static NOT_RANDOM: OnceCell<RandomState> = OnceCell::new();
 
-/// `AHash` `BuildHasher` thast uses a startup initialized random state for known keys
+/// `AHash` `BuildHasher` that uses a startup initialized random state for known keys
 #[derive(Clone)]
 pub struct NotSoRandomState(RandomState);
 
@@ -83,6 +83,7 @@ impl<'key> KnownKey<'key> {
     ///  * If target is not an object
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     /// let object = json!({
     ///   "answer": 42,
@@ -108,6 +109,7 @@ impl<'key> KnownKey<'key> {
     /// key wasn't present.
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     /// let object: BorrowedValue = json!({
     ///   "answer": 42,
@@ -137,6 +139,7 @@ impl<'key> KnownKey<'key> {
     /// key wasn't present or `target` isn't an object
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     /// let mut object: BorrowedValue = json!({
     ///   "answer": 23,
@@ -168,6 +171,7 @@ impl<'key> KnownKey<'key> {
     /// returns None if the key wasn't present.
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     /// let mut object: BorrowedValue = json!({
     ///   "answer": 23,
@@ -209,6 +213,7 @@ impl<'key> KnownKey<'key> {
     /// * if target is not a record
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     /// let mut object: BorrowedValue = json!({
     ///   "answer": 23,
@@ -254,6 +259,7 @@ impl<'key> KnownKey<'key> {
     /// Inserts `with` when the key when wasn't present.
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     /// let mut object: BorrowedValue = json!({
     ///   "answer": 23,
@@ -303,6 +309,7 @@ impl<'key> KnownKey<'key> {
     ///   * if `target` isn't an object
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     /// let mut object: BorrowedValue = json!({
     ///   "answer": 23,
@@ -343,6 +350,7 @@ impl<'key> KnownKey<'key> {
     /// key wasn't present otherwise Some(`old value`).
     ///
     /// ```rust
+    /// use simd_json::prelude::*;
     /// use simd_json::*;
     ///
     /// let mut object: BorrowedValue = json!({

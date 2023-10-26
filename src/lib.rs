@@ -208,8 +208,16 @@ impl Buffers {
 /// # Errors
 ///
 /// Will return `Err` if `s` is invalid JSON.
-pub fn to_tape(s: &mut [u8]) -> Result<Vec<Node>> {
+pub fn to_tape(s: &mut [u8]) -> Result<Tape> {
     Deserializer::from_slice(s).map(Deserializer::into_tape)
+}
+
+/// Creates a tape from the input for later consumption
+/// # Errors
+///
+/// Will return `Err` if `s` is invalid JSON.
+pub fn to_tape_with_buffers<'de>(s: &'de mut [u8], buffers: &mut Buffers) -> Result<Tape<'de>> {
+    Deserializer::from_slice_with_buffers(s, buffers).map(Deserializer::into_tape)
 }
 
 pub(crate) trait Stage1Parse {
@@ -337,7 +345,7 @@ pub(crate) trait Stage1Parse {
         // following it.
 
         // a qualified predecessor is something that can happen 1 position before an
-        // psuedo-structural character
+        // pseudo-structural character
         let pseudo_pred: u64 = structurals | whitespace;
 
         let shifted_pseudo_pred: u64 = (pseudo_pred << 1) | *prev_iter_ends_pseudo_pred;
@@ -782,8 +790,8 @@ impl<'de> Deserializer<'de> {
 impl<'de> Deserializer<'de> {
     /// Extracts the tape from the Deserializer
     #[must_use]
-    pub fn into_tape(self) -> Vec<Node<'de>> {
-        self.tape
+    pub fn into_tape(self) -> Tape<'de> {
+        Tape(self.tape)
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
@@ -877,8 +885,9 @@ impl<'de> Deserializer<'de> {
     /// where it's know the tape isn't finished.
     #[cfg_attr(not(feature = "no-inline"), inline)]
     pub unsafe fn next_(&mut self) -> Node<'de> {
+        let r = *self.tape.get_kinda_unchecked(self.idx);
         self.idx += 1;
-        *self.tape.get_kinda_unchecked(self.idx)
+        r
     }
 
     #[cfg_attr(not(feature = "no-inline"), inline)]
