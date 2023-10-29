@@ -83,29 +83,36 @@ enum State {
     MainArraySwitch,
 }
 #[derive(Debug)]
-enum StackState {
+pub(crate) enum StackState {
     Start,
-    Object,
-    Array,
+    Object { last_start: usize, cnt: usize },
+    Array { last_start: usize, cnt: usize },
 }
 
 impl<'de> Deserializer<'de> {
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[allow(clippy::cognitive_complexity, clippy::too_many_lines, unused_unsafe)]
     pub(crate) fn build_tape(
         input: &'de mut [u8],
         input2: &[u8],
         buffer: &mut [u8],
         structural_indexes: &[u32],
-    ) -> Result<Vec<Node<'de>>> {
+        stack: &mut Vec<StackState>,
+        res: &mut Vec<Node<'de>>,
+    ) -> Result<()> {
+        res.clear();
+        res.reserve(structural_indexes.len());
         // While a valid json can have at max len/2 (`[[[]]]`)elements that are relevant
         // a invalid json might exceed this `[[[[[[` and we need to protect against that.
-        let mut res: Vec<Node<'de>> = Vec::with_capacity(structural_indexes.len());
-        let mut stack = Vec::with_capacity(structural_indexes.len());
+        stack.clear();
+        stack.reserve(structural_indexes.len());
+
+        let res_ptr = res.as_mut_ptr();
+        let stack_ptr = stack.as_mut_ptr();
 
         let mut depth: usize = 0;
-        let mut last_start = 1;
-        let mut cnt: usize = 0;
+        let mut last_start;
+        let mut cnt: usize;
         let mut r_i = 0;
 
         // let mut i: usize = 0; // index of the structural character (0,1,2,3...)
@@ -115,7 +122,7 @@ impl<'de> Deserializer<'de> {
         // by UPDATE_CHAR macro
         let mut c: u8 = 0;
         // skip the zero index
-        let mut i: usize = 1;
+        let mut i: usize = 0;
         let mut state;
 
         macro_rules! s2try {
@@ -138,7 +145,7 @@ impl<'de> Deserializer<'de> {
         macro_rules! insert_res {
             ($t:expr) => {
                 unsafe {
-                    res.as_mut_ptr().add(r_i).write($t);
+                    res_ptr.add(r_i).write($t);
                     r_i += 1;
                 }
             };
@@ -148,7 +155,7 @@ impl<'de> Deserializer<'de> {
                 unsafe {
                     res.set_len(r_i);
                 }
-                return Ok(res);
+                return Ok(());
             };
         }
         macro_rules! update_char {
@@ -286,8 +293,7 @@ impl<'de> Deserializer<'de> {
         match c {
             b'{' => {
                 unsafe {
-                    let s: *mut (StackState, usize, usize) = stack.as_mut_ptr();
-                    s.add(depth).write((StackState::Start, last_start, cnt));
+                    stack_ptr.add(depth).write(StackState::Start);
                 }
 
                 last_start = r_i;
@@ -313,8 +319,7 @@ impl<'de> Deserializer<'de> {
             }
             b'[' => {
                 unsafe {
-                    let s: *mut (StackState, usize, usize) = stack.as_mut_ptr();
-                    s.add(depth).write((StackState::Start, last_start, cnt));
+                    stack_ptr.add(depth).write(StackState::Start);
                 }
 
                 last_start = r_i;
@@ -447,8 +452,9 @@ impl<'de> Deserializer<'de> {
                         }
                         b'{' => {
                             unsafe {
-                                let s: *mut (StackState, usize, usize) = stack.as_mut_ptr();
-                                s.add(depth).write((StackState::Object, last_start, cnt));
+                                stack_ptr
+                                    .add(depth)
+                                    .write(StackState::Object { last_start, cnt });
                             }
                             last_start = r_i;
                             insert_res!(Node::Object { len: 0, count: 0 });
@@ -458,8 +464,9 @@ impl<'de> Deserializer<'de> {
                         }
                         b'[' => {
                             unsafe {
-                                let s: *mut (StackState, usize, usize) = stack.as_mut_ptr();
-                                s.add(depth).write((StackState::Object, last_start, cnt));
+                                stack_ptr
+                                    .add(depth)
+                                    .write(StackState::Object { last_start, cnt });
                             }
                             last_start = r_i;
                             insert_res!(Node::Array { len: 0, count: 0 });
@@ -479,7 +486,7 @@ impl<'de> Deserializer<'de> {
                     }
                     depth -= 1;
                     unsafe {
-                        match *res.as_mut_ptr().add(last_start) {
+                        match *res_ptr.add(last_start) {
                             Node::Array {
                                 ref mut len,
                                 count: ref mut end,
@@ -495,14 +502,23 @@ impl<'de> Deserializer<'de> {
                         };
                     }
                     unsafe {
-                        let a = stack.as_ptr().add(depth);
-
-                        last_start = (*a).1;
-                        cnt = (*a).2;
-
-                        match (*a).0 {
-                            StackState::Object => object_continue!(),
-                            StackState::Array => array_continue!(),
+                        match *stack_ptr.add(depth) {
+                            StackState::Object {
+                                last_start: l,
+                                cnt: c,
+                            } => {
+                                last_start = l;
+                                cnt = c;
+                                object_continue!();
+                            }
+                            StackState::Array {
+                                last_start: l,
+                                cnt: c,
+                            } => {
+                                last_start = l;
+                                cnt = c;
+                                array_continue!();
+                            }
                             StackState::Start => {
                                 if i == structural_indexes.len() {
                                     success!();
@@ -559,8 +575,9 @@ impl<'de> Deserializer<'de> {
                         }
                         b'{' => {
                             unsafe {
-                                let s: *mut (StackState, usize, usize) = stack.as_mut_ptr();
-                                s.add(depth).write((StackState::Array, last_start, cnt));
+                                stack_ptr
+                                    .add(depth)
+                                    .write(StackState::Array { last_start, cnt });
                             }
                             last_start = r_i;
                             insert_res!(Node::Object { len: 0, count: 0 });
@@ -570,8 +587,9 @@ impl<'de> Deserializer<'de> {
                         }
                         b'[' => {
                             unsafe {
-                                let s: *mut (StackState, usize, usize) = stack.as_mut_ptr();
-                                s.add(depth).write((StackState::Array, last_start, cnt));
+                                stack_ptr
+                                    .add(depth)
+                                    .write(StackState::Array { last_start, cnt });
                             }
                             last_start = r_i;
                             insert_res!(Node::Array { len: 0, count: 0 });

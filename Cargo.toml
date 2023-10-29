@@ -1,6 +1,6 @@
 [package]
 name = "simd-json"
-version = "0.13.3"
+version = "0.13.4"
 authors = ["Heinz N. Gies <heinz@licenser.net>", "Sunny Gleason"]
 edition = "2021"
 exclude = ["data/*", "fuzz/*"]
@@ -53,6 +53,10 @@ bench = false
 
 [[bench]]
 name = "parse"
+harness = false
+
+[[bench]]
+name = "to_tape"
 harness = false
 
 [features]
@@ -108,6 +112,24 @@ docsrs = []
 # use runtime detection of the CPU features where possible instead of enforcing an instruction set
 runtime-detection = ["value-trait/runtime-detection"]
 
+#bench fetures
+bench-all = [
+    "bench-apache_builds",
+    "bench-event_stacktrace_10kb",
+    "bench-github_events",
+    "bench-canada",
+    "bench-citm_catalog",
+    "bench-log",
+    "bench-twitter",
+]
+bench-apache_builds = []
+bench-event_stacktrace_10kb = []
+bench-github_events = []
+bench-canada = []
+bench-citm_catalog = []
+bench-log = []
+bench-twitter = []
+
 [[example]]
 name = "perf"
 
@@ -115,6 +137,8 @@ name = "perf"
 codegen-units = 1
 lto = true
 opt-level = 3
+panic = "abort"
+
 
 [profile.release]
 codegen-units = 1

@@ -140,6 +140,7 @@ mod safer_unchecked;
 mod stringparse;
 
 use safer_unchecked::GetSaferUnchecked;
+use stage2::StackState;
 
 mod impls;
 
@@ -182,24 +183,29 @@ pub struct Buffers {
     string_buffer: Vec<u8>,
     structural_indexes: Vec<u32>,
     input_buffer: AlignedBuf,
+    stage2_stack: Vec<StackState>,
 }
 
 impl Default for Buffers {
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     fn default() -> Self {
         Self::new(128)
     }
 }
+
 impl Buffers {
     /// Create new buffer for input length.
     /// If this is too small a new buffer will be allocated, if needed during parsing.
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[must_use]
     pub fn new(input_len: usize) -> Self {
+        // this is a heuristic, it will likely be higher but it will avoid some reallocations hopefully
+        let heuristic_index_cout = input_len / 128;
         Self {
             string_buffer: Vec::with_capacity(input_len + SIMDJSON_PADDING),
-            structural_indexes: Vec::default(),
+            structural_indexes: Vec::with_capacity(heuristic_index_cout),
             input_buffer: AlignedBuf::with_capacity(input_len + SIMDJSON_PADDING * 2),
+            stage2_stack: Vec::with_capacity(heuristic_index_cout),
         }
     }
 }
@@ -208,6 +214,7 @@ impl Buffers {
 /// # Errors
 ///
 /// Will return `Err` if `s` is invalid JSON.
+#[cfg_attr(not(feature = "no-inline"), inline)]
 pub fn to_tape(s: &mut [u8]) -> Result<Tape> {
     Deserializer::from_slice(s).map(Deserializer::into_tape)
 }
@@ -216,8 +223,19 @@ pub fn to_tape(s: &mut [u8]) -> Result<Tape> {
 /// # Errors
 ///
 /// Will return `Err` if `s` is invalid JSON.
+#[cfg_attr(not(feature = "no-inline"), inline)]
 pub fn to_tape_with_buffers<'de>(s: &'de mut [u8], buffers: &mut Buffers) -> Result<Tape<'de>> {
     Deserializer::from_slice_with_buffers(s, buffers).map(Deserializer::into_tape)
+}
+
+/// Fills a already existing tape from the input for later consumption
+/// # Errors
+///
+/// Will return `Err` if `s` is invalid JSON.
+#[cfg_attr(not(feature = "no-inline"), inline)]
+pub fn fill_tape<'de>(s: &'de mut [u8], buffers: &mut Buffers, tape: &mut Tape<'de>) -> Result<()> {
+    tape.0.clear();
+    Deserializer::fill_tape(s, buffers, &mut tape.0)
 }
 
 pub(crate) trait Stage1Parse {
@@ -380,7 +398,7 @@ pub(crate) struct SillyWrapper<'de> {
 }
 
 impl<'de> From<*mut u8> for SillyWrapper<'de> {
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     fn from(input: *mut u8) -> Self {
         Self {
             input,
@@ -522,7 +540,7 @@ impl<'de> Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(
         feature = "runtime-detection",
         any(target_arch = "x86_64", target_arch = "x86"),
@@ -540,7 +558,7 @@ impl<'de> Deserializer<'de> {
 
         static FN: AtomicPtr<()> = AtomicPtr::new(get_fastest as FnRaw);
 
-        #[inline]
+        #[cfg_attr(not(feature = "no-inline"), inline)]
         fn get_fastest_available_implementation() -> ParseStrFn {
             if std::is_x86_feature_detected!("avx2") {
                 impls::avx2::parse_str
@@ -555,7 +573,7 @@ impl<'de> Deserializer<'de> {
             }
         }
 
-        #[inline]
+        #[cfg_attr(not(feature = "no-inline"), inline)]
         unsafe fn get_fastest<'invoke, 'de>(
             input: SillyWrapper<'de>,
             data: &'invoke [u8],
@@ -574,7 +592,7 @@ impl<'de> Deserializer<'de> {
         let fun = FN.load(Ordering::Relaxed);
         mem::transmute::<FnRaw, ParseStrFn>(fun)(input, data, buffer, idx)
     }
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(not(any(
         feature = "runtime-detection",
         feature = "portable",
@@ -595,7 +613,7 @@ impl<'de> Deserializer<'de> {
         let input: SillyWrapper<'de> = SillyWrapper::from(input);
         impls::native::parse_str(input, data, buffer, idx)
     }
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(feature = "portable", not(feature = "runtime-detection")))]
     pub(crate) unsafe fn parse_str_<'invoke>(
         input: *mut u8,
@@ -610,7 +628,7 @@ impl<'de> Deserializer<'de> {
         impls::portable::parse_str(input, data, buffer, idx)
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(
         target_feature = "avx2",
         not(feature = "portable"),
@@ -626,7 +644,7 @@ impl<'de> Deserializer<'de> {
         impls::avx2::parse_str(input, data, buffer, idx)
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(
         target_feature = "sse4.2",
         not(target_feature = "avx2"),
@@ -643,7 +661,7 @@ impl<'de> Deserializer<'de> {
         impls::sse42::parse_str(input, data, buffer, idx)
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(target_arch = "aarch64", not(feature = "portable")))]
     pub(crate) unsafe fn parse_str_<'invoke>(
         input: *mut u8,
@@ -654,7 +672,7 @@ impl<'de> Deserializer<'de> {
         let input: SillyWrapper<'de> = SillyWrapper::from(input);
         impls::neon::parse_str(input, data, buffer, idx)
     }
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(target_feature = "simd128", not(feature = "portable")))]
     pub(crate) unsafe fn parse_str_<'invoke>(
         input: *mut u8,
@@ -669,7 +687,7 @@ impl<'de> Deserializer<'de> {
 
 /// architecture dependant `find_structural_bits`
 impl<'de> Deserializer<'de> {
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     #[cfg(all(
         feature = "runtime-detection",
         any(target_arch = "x86_64", target_arch = "x86"),
@@ -682,7 +700,7 @@ impl<'de> Deserializer<'de> {
 
         static FN: AtomicPtr<()> = AtomicPtr::new(get_fastest as FnRaw);
 
-        #[inline]
+        #[cfg_attr(not(feature = "no-inline"), inline)]
         fn get_fastest_available_implementation() -> FindStructuralBitsFn {
             if std::is_x86_feature_detected!("avx2") {
                 Deserializer::_find_structural_bits::<impls::avx2::SimdInput>
@@ -697,7 +715,7 @@ impl<'de> Deserializer<'de> {
             }
         }
 
-        #[inline]
+        #[cfg_attr(not(feature = "no-inline"), inline)]
         unsafe fn get_fastest(
             input: &[u8],
             structural_indexes: &mut Vec<u32>,
@@ -719,7 +737,7 @@ impl<'de> Deserializer<'de> {
         target_feature = "simd128",
         target_arch = "aarch64",
     )))]
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
         structural_indexes: &mut Vec<u32>,
@@ -735,7 +753,7 @@ impl<'de> Deserializer<'de> {
     }
 
     #[cfg(all(feature = "portable", not(feature = "runtime-detection")))]
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
         structural_indexes: &mut Vec<u32>,
@@ -748,7 +766,7 @@ impl<'de> Deserializer<'de> {
         not(feature = "portable"),
         not(feature = "runtime-detection"),
     ))]
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
         structural_indexes: &mut Vec<u32>,
@@ -762,7 +780,7 @@ impl<'de> Deserializer<'de> {
         not(feature = "runtime-detection"),
         not(feature = "portable"),
     ))]
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
         structural_indexes: &mut Vec<u32>,
@@ -771,7 +789,7 @@ impl<'de> Deserializer<'de> {
     }
 
     #[cfg(all(target_arch = "aarch64", not(feature = "portable")))]
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
         structural_indexes: &mut Vec<u32>,
@@ -780,7 +798,7 @@ impl<'de> Deserializer<'de> {
     }
 
     #[cfg(all(target_feature = "simd128", not(feature = "portable")))]
-    #[inline]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
     pub(crate) unsafe fn find_structural_bits(
         input: &[u8],
         structural_indexes: &mut Vec<u32>,
@@ -788,6 +806,7 @@ impl<'de> Deserializer<'de> {
         Self::_find_structural_bits::<impls::simd128::SimdInput>(input, structural_indexes)
     }
 }
+
 impl<'de> Deserializer<'de> {
     /// Extracts the tape from the Deserializer
     #[must_use]
@@ -818,55 +837,79 @@ impl<'de> Deserializer<'de> {
         Self::from_slice_with_buffers(input, &mut buffer)
     }
 
+    /// Fills the tape without creating a serializer, this function poses
+    /// lifetime chalanges and can be frustrating, howver when it is
+    /// usable it allows a allocation free (armotized) parsing of JSON
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if `input` is invalid JSON.
+    #[allow(clippy::uninit_vec)]
+    #[cfg_attr(not(feature = "no-inline"), inline)]
+    fn fill_tape(
+        input: &'de mut [u8],
+        buffer: &mut Buffers,
+        tape: &mut Vec<Node<'de>>,
+    ) -> Result<()> {
+        const LOTS_OF_ZOERS: [u8; SIMDINPUT_LENGTH] = [0; SIMDINPUT_LENGTH];
+        let len = input.len();
+        let simd_safe_len = len + SIMDINPUT_LENGTH;
+
+        if len > std::u32::MAX as usize {
+            return Err(Self::error(ErrorType::InputTooLarge));
+        }
+
+        buffer.string_buffer.clear();
+        buffer.string_buffer.reserve(len + SIMDJSON_PADDING);
+
+        unsafe {
+            buffer.string_buffer.set_len(len + SIMDJSON_PADDING);
+        };
+
+        let input_buffer = &mut buffer.input_buffer;
+        if input_buffer.capacity() < simd_safe_len {
+            *input_buffer = AlignedBuf::with_capacity(simd_safe_len);
+        }
+
+        unsafe {
+            input_buffer
+                .as_mut_ptr()
+                .copy_from_nonoverlapping(input.as_ptr(), len);
+
+            // initialize all remaining bytes
+            // this also ensures we have a 0 to terminate the buffer
+            input_buffer
+                .as_mut_ptr()
+                .add(len)
+                .copy_from_nonoverlapping(LOTS_OF_ZOERS.as_ptr(), SIMDINPUT_LENGTH);
+
+            // safety: all bytes are initialized
+            input_buffer.set_len(simd_safe_len);
+
+            Self::find_structural_bits(input, &mut buffer.structural_indexes)
+                .map_err(Error::generic)?;
+        };
+
+        Self::build_tape(
+            input,
+            input_buffer,
+            &mut buffer.string_buffer,
+            &buffer.structural_indexes,
+            &mut buffer.stage2_stack,
+            tape,
+        )
+    }
+
     /// Creates a serializer from a mutable slice of bytes using a temporary
     /// buffer for strings for them to be copied in and out if needed
     ///
     /// # Errors
     ///
     /// Will return `Err` if `s` is invalid JSON.
-    #[allow(clippy::uninit_vec)]
     pub fn from_slice_with_buffers(input: &'de mut [u8], buffer: &mut Buffers) -> Result<Self> {
-        let len = input.len();
+        let mut tape: Vec<Node<'de>> = Vec::with_capacity(buffer.structural_indexes.len());
 
-        buffer.string_buffer.clear();
-        buffer.string_buffer.reserve(len + SIMDJSON_PADDING);
-        unsafe {
-            buffer.string_buffer.set_len(len + SIMDJSON_PADDING);
-        };
-
-        if len > std::u32::MAX as usize {
-            return Err(Self::error(ErrorType::InputTooLarge));
-        }
-        let input_buffer = &mut buffer.input_buffer;
-
-        if input_buffer.capacity() < len + SIMDJSON_PADDING * 2 {
-            *input_buffer = AlignedBuf::with_capacity(len + SIMDJSON_PADDING * 2);
-        }
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(input.as_ptr(), input_buffer.as_mut_ptr(), len);
-
-            // initialize all remaining bytes
-            // this also ensures we have a 0 to terminate the buffer
-            for i in len..input_buffer.capacity() {
-                std::ptr::write(input_buffer.as_mut_ptr().add(i), 0);
-            }
-
-            // safety: all bytes are initialized
-            input_buffer.set_len(input_buffer.capacity());
-        };
-
-        unsafe {
-            Self::find_structural_bits(input, &mut buffer.structural_indexes)
-                .map_err(Error::generic)?;
-        };
-
-        let tape: Vec<Node> = Self::build_tape(
-            input,
-            input_buffer,
-            &mut buffer.string_buffer,
-            &buffer.structural_indexes,
-        )?;
+        Self::fill_tape(input, buffer, &mut tape)?;
 
         Ok(Self { tape, idx: 0 })
     }
@@ -898,11 +941,10 @@ impl<'de> Deserializer<'de> {
         structural_indexes: &mut Vec<u32>,
     ) -> std::result::Result<(), ErrorType> {
         let len = input.len();
-        // 6 is a heuristic number to estimate it turns out a rate of 1/6 structural characters
+        // 8 is a heuristic number to estimate it turns out a rate of 1/8 structural characters
         // leads almost never to relocations.
         structural_indexes.clear();
-        structural_indexes.reserve(len / 6);
-        structural_indexes.push(0); // push extra root element
+        structural_indexes.reserve(len / 8);
 
         let mut utf8_validator = S::Utf8Validator::new();
 
@@ -1028,14 +1070,8 @@ impl<'de> Deserializer<'de> {
 
         // a valid JSON file cannot have zero structural indexes - we should have
         // found something (note that we compare to 1 as we always add the root!)
-        if structural_indexes.len() == 1 {
+        if structural_indexes.is_empty() {
             return Err(ErrorType::Eof);
-        }
-
-        if structural_indexes.last() > Some(&(len as u32)) {
-            return Err(ErrorType::InternalError(
-                InternalError::InvalidStrucutralIndexes,
-            ));
         }
 
         if error_mask != 0 {
@@ -1069,7 +1105,7 @@ impl AlignedBuf {
     /// Creates a new buffer that is  aligned with the simd register size
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
-        let layout = match Layout::from_size_align(capacity, SIMDJSON_PADDING / 2) {
+        let layout = match Layout::from_size_align(capacity, SIMDJSON_PADDING) {
             Ok(layout) => layout,
             Err(_) => Self::capacity_overflow(),
         };
